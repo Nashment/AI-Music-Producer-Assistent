@@ -1,11 +1,9 @@
 import requests
 import os
 
-# ================= CONFIGURACAO =================
-API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"  # Coloca aqui a tua chave
+API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"
 BASE_URL = "https://api.sunoapi.org"
 TASK_ID = "f46e6b34d0939a057aeb379afa2cac6c"
-# ================================================
 
 headers = {
     "Authorization": f"Bearer {API_KEY}",
@@ -14,7 +12,6 @@ headers = {
 
 
 def consultar_detalhes_oficiais(task_id):
-    # Endpoint correto baseado na documentacao partilhada
     url = f"{BASE_URL}/api/v1/generate/record-info?taskId={task_id}"
     try:
         response = requests.get(url, headers=headers)
@@ -35,35 +32,31 @@ def descarregar_audio(url, nome_ficheiro):
             caminho_completo = os.path.join(os.getcwd(), nome_ficheiro)
             with open(caminho_completo, 'wb') as f:
                 f.write(r.content)
-            print(f"Guardado com sucesso em: {caminho_completo}")
+            print(f"Guardado em: {caminho_completo}")
         else:
-            print(f"Falha ao aceder ao ficheiro de audio. Codigo HTTP: {r.status_code}")
+            print(f"Erro HTTP: {r.status_code}")
     except Exception as e:
-        print(f"Erro ao guardar o ficheiro MP3 no disco: {e}")
+        print(f"Erro ao guardar ficheiro: {e}")
 
 
 def extrair_e_guardar_musicas():
-    print(f"A consultar o estado oficial da tarefa {TASK_ID}...")
+    print(f"A consultar estado da tarefa {TASK_ID}...")
 
     dados = consultar_detalhes_oficiais(TASK_ID)
 
-    # Verifica se a API respondeu corretamente
     if dados and dados.get("code") == 200:
         info_tarefa = dados.get("data", {})
         estado_tarefa = info_tarefa.get("status")
 
-        print(f"Estado atual da tarefa na API: {estado_tarefa}")
+        print(f"Estado: {estado_tarefa}")
 
-        # De acordo com a documentacao, "SUCCESS" significa que gerou tudo
         if estado_tarefa == "SUCCESS":
-            # Navega ate a lista de musicas seguindo a arvore do JSON da OpenAPI
             suno_data = info_tarefa.get("response", {}).get("sunoData", [])
 
             if len(suno_data) > 0:
-                print(f"Encontrados {len(suno_data)} ficheiros de audio. A iniciar downloads...")
+                print(f"Encontrados {len(suno_data)} ficheiros. A descarregar...")
 
                 for i, musica in enumerate(suno_data):
-                    # O campo correto no novo schema e camelCase: audioUrl (nao audio_url)
                     url_mp3 = musica.get("audioUrl")
 
                     if url_mp3:

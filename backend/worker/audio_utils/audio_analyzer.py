@@ -17,7 +17,7 @@ def obter_templates_acordes():
 
 
 def detetar_tom_base(chroma):
-    """Descobre o Tom matematicamente (Krumhansl-Schmuckler)"""
+    """Detecta a tonalidade da música"""
     soma_chroma = np.sum(chroma, axis=1)
     perfil_maior = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
     perfil_menor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
@@ -41,7 +41,7 @@ def detetar_tom_base(chroma):
 
 
 def ajustar_tom_pela_progressao(tom_ks, progressao):
-    """Aplica a regra lógica: corrige Maior/Menor com base no 1º ou último acorde"""
+    """Corrige modo (Maior/Menor) pela progressão de acordes"""
     if len(progressao) == 0:
         return tom_ks
 
@@ -49,20 +49,17 @@ def ajustar_tom_pela_progressao(tom_ks, progressao):
     ultimo_acorde = progressao[-1]
 
     notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    nota_tom, modo = tom_ks.split(" ")  # Ex: separa "C" e "Maior"
+    nota_tom, modo = tom_ks.split(" ")
     idx = notas.index(nota_tom)
 
     if modo == "Maior":
-        # A relativa menor está 3 meios-tons abaixo
         idx_relativa = (idx - 3) % 12
         acorde_relativo_menor = notas[idx_relativa] + "m"
 
-        # Se a música começa ou acaba na relativa menor, assumimos o tom menor
         if primeiro_acorde == acorde_relativo_menor or ultimo_acorde == acorde_relativo_menor:
             return notas[idx_relativa] + " Menor"
 
     elif modo == "Menor":
-        # A relativa maior está 3 meios-tons acima
         idx_relativa = (idx + 3) % 12
         acorde_relativo_maior = notas[idx_relativa]
 
@@ -83,7 +80,6 @@ def analisar_audio_completo(caminho_wav):
     print("A extrair a harmonia...")
     chroma = librosa.feature.chroma_cens(y=y, sr=sr, hop_length=4096)
 
-    # Calcula os acordes primeiro
     templates = obter_templates_acordes()
     nomes_acordes = list(templates.keys())
     vetores_acordes = np.array(list(templates.values()))
@@ -101,10 +97,7 @@ def analisar_audio_completo(caminho_wav):
         if len(acordes_detetados) == 0 or acordes_detetados[-1] != melhor_acorde:
             acordes_detetados.append(melhor_acorde)
 
-    # Calcula o Tom bruto
     tom_matematico = detetar_tom_base(chroma)
-
-    # Aplica a regra de correção de Tom
     tom_corrigido = ajustar_tom_pela_progressao(tom_matematico, acordes_detetados)
 
     return round(bpm), tom_corrigido, acordes_detetados
@@ -115,12 +108,8 @@ if __name__ == "__main__":
 
     try:
         bpm_resultado, tom_resultado, progressao = analisar_audio_completo(ficheiro)
-        print("\n" + "=" * 40)
-        print("RESULTADOS DA ANALISE MUSICAL (V4)")
-        print("=" * 40)
-        print(f"Tom : {tom_resultado}")
-        print(f"BPM       : {bpm_resultado} batidas por minuto")
+        print(f"Tom: {tom_resultado}")
+        print(f"BPM: {bpm_resultado} batidas por minuto")
         print(f"Progressao: {' -> '.join(progressao)}")
-        print("=" * 40)
     except Exception as e:
-        print(f"\nErro ao ler o ficheiro: {e}")
+        print(f"Erro ao ler o ficheiro: {e}")

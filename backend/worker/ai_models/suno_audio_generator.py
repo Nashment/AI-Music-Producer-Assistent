@@ -2,12 +2,9 @@ import requests
 import time
 import os
 
-# ================= CONFIGURACAO =================
-API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"  # Nao te esquecas de colocar aqui a tua chave
+API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"
 BASE_URL = "https://api.sunoapi.org"
-# Prompt baseada na tua analise musical (70 BPM, A Menor)
 STYLE_PROMPT = "Slow emotional electric blues guitar solo, soulful bends, vibrato, 70 BPM, Key of A Minor, Am-F-C-G progression, clean overdriven tone"
-# ================================================
 
 headers = {
     "Authorization": f"Bearer {API_KEY}",
@@ -23,7 +20,7 @@ def iniciar_geracao():
         "model": "V5",
         "style": STYLE_PROMPT,
         "title": "Solo Blues A Menor 70BPM",
-        "callBackUrl": "https://webhook.site/vazio"  # Campo obrigatorio pela API
+        "callBackUrl": "https://webhook.site/vazio"
     }
 
     try:
@@ -39,7 +36,6 @@ def iniciar_geracao():
 
 
 def verificar_estado(task_id):
-    # Endpoint para consultar detalhes da geracao
     url = f"{BASE_URL}/api/v1/get_music_details?taskId={task_id}"
     try:
         response = requests.get(url, headers=headers)
@@ -69,11 +65,10 @@ def executor():
     if not task_id:
         return
 
-    print(f"Tarefa {task_id} iniciada. A aguardar pela IA...")
+    print(f"Tarefa {task_id} iniciada. A aguardar...")
 
-    # Loop de verificacao infinito (controlado pela existencia do audio_url)
     while True:
-        time.sleep(30)  # Espera 30 segundos entre verificacoes para nao sobrecarregar a API
+        time.sleep(30)
         dados = verificar_estado(task_id)
 
         if dados and dados.get("code") == 200:
