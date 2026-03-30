@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: music_ai_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-music_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-music_password}
+      POSTGRES_DB: ${DB_NAME:-music_ai_db}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./SQL/01_init_schema.sql:/docker-entrypoint-initdb.d/01_init_schema.sql
+      - ./SQL/02_create_tables.sql:/docker-entrypoint-initdb.d/02_create_tables.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-music_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - music_ai_network
+
+  # Redis for Celery tasks (optional, for async processing)
+  redis:
+    image: redis:7-alpine
+    container_name: music_ai_redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - music_ai_network
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: music_ai_backend
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DEBUG: ${DEBUG:-True}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - ./generations:/app/generations
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - music_ai_network
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: music_ai_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - music_ai_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  music_ai_network:
+    driver: bridge
