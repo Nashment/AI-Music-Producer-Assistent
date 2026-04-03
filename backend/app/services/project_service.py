@@ -2,7 +2,10 @@
 Project Service - Project management business logic
 """
 
+import uuid
 from typing import List, Optional
+# Importamos as Queries necessárias (assume-se que estão no teu __init__.py de data)
+from backend.app.data import ProjectQueries, GenerationQueries
 
 
 class ProjectService:
@@ -10,76 +13,81 @@ class ProjectService:
     Service for project operations
     """
 
-    def __init__(self, data_accessor):
+    def __init__(self, db_session):
         """
         Initialize service
-        
-        Args:
-            data_accessor: Data access layer instance
-        """
-        self.data = data_accessor
 
-    async def create_project(self, user_id: int, title: str, description: str, tempo: int) -> dict:
-        """
-        Create a new music project
-        
         Args:
-            user_id: Owner user ID
-            title: Project title
-            description: Project description
-            tempo: Tempo in BPM
-            
-        Returns:
-            Created project data
+            db_session: A sessão ativa do SQLAlchemy (injeção de dependência do FastAPI)
         """
-        # TODO: Validate input data
-        # TODO: Call data accessor to save project
-        pass
+        self.db = db_session
 
-    async def get_project(self, project_id: int, user_id: int) -> Optional[dict]:
-        """
-        Get project details
-        
-        Args:
-            project_id: Project identifier
-            user_id: User ID (for authorization check)
-            
-        Returns:
-            Project data or None if not found
-        """
-        # TODO: Verify user authorization
-        # TODO: Implement
-        pass
+    async def create_project(self, user_id: str, title: str, description: str, tempo: int):
+        """Create a new music project"""
+        clean_title = title.strip()
 
-    async def list_user_projects(self, user_id: int) -> List[dict]:
-        """
-        List all projects for a user
-        
-        Args:
-            user_id: User identifier
-            
-        Returns:
-            List of user projects
-        """
-        # TODO: Implement
-        pass
+        if not clean_title:
+            raise ValueError("O título do projeto não pode estar vazio.")
 
-    async def update_project(self, project_id: int, user_id: int, update_data: dict) -> dict:
+        try:
+            projeto = ProjectQueries.create_project(
+                db=self.db,
+                user_id=uuid.UUID(user_id),
+                title=clean_title,
+                description=description,
+                tempo=tempo
+            )
+            return projeto
+        except Exception as e:
+            print(f"Erro ao criar projeto: {e}")
+            raise
+
+    async def get_project(self, project_id: str, user_id: str):
+        """Get project details with authorization check"""
+        project = ProjectQueries.get_project(db=self.db, project_id=uuid.UUID(project_id))
+
+        if not project:
+            return None
+
+        # VERIFICAÇÃO DE SEGURANÇA: Este projeto pertence a este utilizador?
+        if str(project.user_id) != user_id:
+            raise PermissionError("Não tens autorização para aceder a este projeto.")
+
+        return project
+
+    async def list_user_projects(self, user_id: str):
+        """List all projects for a user"""
+        projetos = ProjectQueries.get_user_projects(db=self.db, user_id=uuid.UUID(user_id))
+        return projetos
+
+    async def update_project(self, project_id: str, user_id: str, update_data: dict):
         """Update project information"""
-        # TODO: Implement
-        pass
+        # 1. Verifica se o projeto existe e pertence ao utilizador
+        await self.get_project(project_id, user_id)
 
-    async def delete_project(self, project_id: int, user_id: int) -> bool:
+        # 2. Se não deu erro de permissão acima, podemos atualizar em segurança
+        projeto_atualizado = ProjectQueries.update_project(
+            db=self.db,
+            project_id=uuid.UUID(project_id),
+            **update_data  # Desempacota o dicionário (ex: {"title": "Novo Título", "tempo": 140})
+        )
+        return projeto_atualizado
+
+    async def delete_project(self, project_id: str, user_id: str) -> bool:
         """Delete a project"""
-        # TODO: Implement with cascade logic
-        pass
+        # 1. Verifica a propriedade do projeto (Segurança)
+        await self.get_project(project_id, user_id)
 
-    async def add_audio_to_project(self, project_id: int, audio_id: str) -> bool:
-        """Associate uploaded audio with project"""
-        # TODO: Implement
-        pass
+        # 2. Apaga o projeto. A lógica de CASCADE que definimos nos modelos
+        #    (ondelete="CASCADE") vai limpar automaticamente as gerações associadas na base de dados!
+        sucesso = ProjectQueries.delete_project(db=self.db, project_id=uuid.UUID(project_id))
+        return sucesso
 
-    async def list_project_generations(self, project_id: int, user_id: int) -> List[dict]:
+    async def list_project_generations(self, project_id: str, user_id: str):
         """List all music generations for a project"""
-        # TODO: Implement
-        pass
+        # 1. Verifica se o utilizador tem acesso ao projeto
+        await self.get_project(project_id, user_id)
+
+        # 2. Vai buscar o histórico de gerações de IA deste projeto
+        geracoes = GenerationQueries.get_project_generations(db=self.db, project_id=uuid.UUID(project_id))
+        return geracoes

@@ -1,5 +1,6 @@
 import librosa
 import numpy as np
+from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
 
 
 def obter_templates_acordes():
@@ -71,7 +72,9 @@ def ajustar_tom_pela_progressao(tom_ks, progressao):
 
 def analisar_audio_completo(caminho_wav):
     print(f"A ler o ficheiro '{caminho_wav}'...")
-    y, sr = librosa.load(caminho_wav)
+    y, sr = librosa.load(caminho_wav, sr=None)
+
+    duracao = librosa.get_duration(y=y, sr=sr)
 
     print("A calcular os BPMs...")
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr, start_bpm=75)
@@ -100,7 +103,17 @@ def analisar_audio_completo(caminho_wav):
     tom_matematico = detetar_tom_base(chroma)
     tom_corrigido = ajustar_tom_pela_progressao(tom_matematico, acordes_detetados)
 
-    return round(bpm), tom_corrigido, acordes_detetados
+    # 2. RETORNO ALTERADO: Agora devolvemos um dicionário com tudo o que o serviço pediu
+    return {
+        "bpm": round(bpm),
+        "key": tom_corrigido,
+        "chords": acordes_detetados,
+        "duration": duracao,
+        "sample_rate": sr,
+        # O librosa não deteta time_signature (compasso) facilmente,
+        # pelo que podemos deixar None ou predefinir para "4/4"
+        "time_signature": None
+    }
 
 
 if __name__ == "__main__":

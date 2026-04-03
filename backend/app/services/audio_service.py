@@ -2,70 +2,106 @@
 Audio Service - Audio processing and analysis business logic
 """
 
-from typing import Optional, Dict
 import os
-import sys
-from pathlib import Path
+import uuid
+from typing import Optional
+from backend.app.data import AudioQueries
 
-# Add worker to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "worker"))
+from backend.worker.audio_utils.audio_analyzer import analisar_audio_completo
 
-try:
-    from audio_utils.audio_analyzer import analisar_audio_completo
-    from audio_utils.corte_audio import cortar_audio_para_30_segundos
-    from audio_utils.ajuste_bpm import ajustar_bpm_automatico
-    from audio_utils.separador_faixas import extrair_instrumento
-except ImportError as e:
-    print(f"Warning: Could not import worker modules: {e}")
 
-from app.core.config import settings
+# Assumindo que a tua função de análise vem de outro ficheiro:
+# from app.utils.audio_analyzer import analisar_audio_completo
 
 
 class AudioService:
-    """
-    Service for audio operations and analysis
-    """
-
-    def __init__(self, data_accessor):
+    def __init__(self, db_session):
         """
         Initialize service
-        
-        Args:
-            data_accessor: Data access layer instance
-        """
-        self.data = data_accessor
 
-    async def upload_and_analyze_audio(self, file_path: str, user_id: int) -> dict:
+        Args:
+            db_session: Sessão do SQLAlchemy injetada pelo FastAPI
+        """
+        self.db = db_session
+
+    async def upload_and_analyze_audio(
+        self,
+        file_path: str,
+        user_id: str,
+        project_id: Optional[str] = None
+    ):
         """
         Upload audio file and analyze characteristics
-        
+
         Args:
             file_path: Path to uploaded audio file
-            user_id: User ID
-            
+            user_id: User ID (UUID string)
+            project_id: Optional Project ID (UUID string)
+
         Returns:
-            Audio analysis results (BPM, key, duration, etc.)
+            O registo do ficheiro de áudio criado na base de dados
         """
-        # TODO: Validate file format and size
+        # 1. VALIDAÇÃO DE FORMATO E TAMANHO
+        valid_extensions = {'.mp3', '.wav'}
+        _, ext = os.path.splitext(file_path.lower())
+
+        if ext not in valid_extensions:
+            raise ValueError(f"Formato não suportado. Formatos válidos: {valid_extensions}")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("O ficheiro de áudio não foi encontrado no servidor.")
+
+        file_size = os.path.getsize(file_path)
+        max_size_bytes = 50 * 1024 * 1024  # Limite de 50 MB
+
+        if file_size > max_size_bytes:
+            raise ValueError(f"O ficheiro é demasiado grande ({file_size / 1024 / 1024:.2f}MB). O limite é 50MB.")
+
+        # 2. PROCESSAMENTO E GRAVAÇÃO
         try:
-            # Call audio_analyzer to extract characteristics
+            # Chama a tua função externa de análise de áudio
             analysis_result = analisar_audio_completo(file_path)
-            
-            # Structure the results
-            audio_analysis = {
-                "file_path": file_path,
-                "bpm": analysis_result.get("bpm"),
-                "key": analysis_result.get("key"),
-                "time_signature": analysis_result.get("time_signature"),
-                "duration": analysis_result.get("duration"),
-                "chords": analysis_result.get("chords", [])
-            }
-            
-            # TODO: Store analysis in database
-            return audio_analysis
+
+            # Preparar IDs (converter strings para UUIDs reais)
+            user_uuid = uuid.UUID(user_id)
+            project_uuid = uuid.UUID(project_id) if project_id else None
+
+            # Extrair os dados de forma segura (com valores por defeito se o analisador falhar em algum)
+            duration = analysis_result.get("duration", 0.0)
+            sample_rate = analysis_result.get("sample_rate", 44100) # Exemplo de default
+
+            # Garantir que o BPM é um inteiro, se existir
+            bpm_raw = analysis_result.get("bpm")
+            bpm = int(bpm_raw) if bpm_raw is not None else None
+
+            key = analysis_result.get("key")
+            time_signature = analysis_result.get("time_signature")
+
+            # 3. GUARDAR NA BASE DE DADOS
+            # Delegamos a gravação à nossa classe AudioQueries
+            audio_record = AudioQueries.create_audio_file(
+                db=self.db,
+                user_id=user_uuid,
+                project_id=project_uuid,
+                file_path=file_path,
+                file_size=file_size,
+                duration=duration,
+                sample_rate=sample_rate,
+                bpm=bpm,
+                key=key,
+                time_signature=time_signature
+            )
+
+            # Podes adicionar os "chords" dinâmicos ao objeto antes de devolver, se precisares deles na API
+            audio_record.chords = analysis_result.get("chords", [])
+
+            return audio_record
+
         except Exception as e:
-            print(f"Error analyzing audio: {e}")
-            return {}
+            # Em vez de devolver um dict vazio, levantamos o erro.
+            # Isto permite que a tua rota FastAPI apanhe a exceção e devolva um erro HTTP 500 ou 400 real ao telemóvel.
+            print(f"Erro ao processar áudio: {e}")
+            raise
 
     async def get_audio_analysis(self, audio_id: str) -> Optional[dict]:
         """

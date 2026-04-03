@@ -5,7 +5,7 @@ Database connection and session management
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 class Database:
@@ -42,25 +42,27 @@ class Database:
         """Get database session"""
         return self.SessionLocal()
 
-    async def init_db(self):
+    def init_db(self):
         """Initialize database tables"""
-        # TODO: Create all tables from declarative base
+        # Aqui, mais tarde, vamos importar o teu ficheiro de models
+        # e fazer algo como: Base.metadata.create_all(bind=self.engine)
         pass
 
-    async def close_db(self):
+    def close_db(self):
         """Close database connection"""
-        await self.engine.dispose()
+        self.engine.dispose()
 
-    async def health_check(self) -> bool:
+    def health_check(self) -> bool:
         """Check database connection health"""
+        from sqlalchemy import text  # Necessário para o SELECT 1 no SQLAlchemy 2.0+
+
         try:
             with self.engine.connect() as connection:
-                connection.execute("SELECT 1")
+                connection.execute(text("SELECT 1"))
             return True
         except Exception as e:
             print(f"Database health check failed: {e}")
             return False
-
 
 # Global database instance
 db = Database()
