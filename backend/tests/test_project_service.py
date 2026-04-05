@@ -3,8 +3,8 @@ Tests for ProjectService
 """
 
 import pytest
-from app.services.project_service import ProjectService
-from app.data.queries import ProjectQueries, UserQueries
+from backend.app.services.project_service import ProjectService
+from backend.app.data.queries import ProjectQueries, UserQueries
 
 
 class TestProjectService:

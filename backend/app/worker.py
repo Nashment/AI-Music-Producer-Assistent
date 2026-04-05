@@ -3,7 +3,7 @@ Celery worker tasks for background processing
 """
 
 from celery import Celery
-from app.core.config import settings
+from backend.app.core.config import settings
 import os
 import sys
 from pathlib import Path

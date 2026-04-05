@@ -5,6 +5,7 @@ User endpoints - OAuth authentication and user management
 from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel, EmailStr
 from typing import Optional
+from backend.app.core.auth import AuthService
 
 router = APIRouter()
 
@@ -162,8 +163,6 @@ async def google_oauth_callback(request: OAuthCallbackRequest):
         User info and JWT token
     """
     try:
-        from app.core.auth import AuthService
-        
         auth_service = AuthService()
         result = await auth_service.oauth_login_google(request.code)
         
@@ -193,8 +192,6 @@ async def github_oauth_callback(request: OAuthCallbackRequest):
         User info and JWT token
     """
     try:
-        from app.core.auth import AuthService
-        
         auth_service = AuthService()
         result = await auth_service.oauth_login_github(request.code)
         
@@ -224,8 +221,6 @@ async def microsoft_oauth_callback(request: OAuthCallbackRequest):
         User info and JWT token
     """
     try:
-        from app.core.auth import AuthService
-        
         auth_service = AuthService()
         result = await auth_service.oauth_login_microsoft(request.code)
         
@@ -264,7 +259,6 @@ async def get_current_user(authorization: str = None):
         if scheme.lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization scheme")
         
-        from app.core.auth import AuthService
         auth_service = AuthService()
         
         payload = auth_service.verify_token(token)
@@ -296,7 +290,6 @@ async def update_user_profile(
         if not authorization:
             raise HTTPException(status_code=401, detail="Missing authorization header")
         
-        from app.core.auth import AuthService
         auth_service = AuthService()
         
         scheme, token = authorization.split()
@@ -326,7 +319,6 @@ async def delete_account(authorization: str = None):
         if not authorization:
             raise HTTPException(status_code=401, detail="Missing authorization header")
         
-        from app.core.auth import AuthService
         auth_service = AuthService()
         
         scheme, token = authorization.split()

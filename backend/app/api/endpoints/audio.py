@@ -14,6 +14,17 @@ from backend.app.data import AudioQueries
 
 from backend.app.api.dependencies import get_db, get_current_user_id
 
+# Audio processing utilities
+try:
+    from backend.worker.audio_utils.ajuste_bpm import ajustar_bpm_automatico
+    from backend.worker.audio_utils.corte_audio import cortar_audio_para_30_segundos
+    from backend.worker.audio_utils.separador_faixas import extrair_instrumento
+except ImportError as e:
+    print(f"Warning: Could not import audio processing modules: {e}")
+    ajustar_bpm_automatico = None
+    cortar_audio_para_30_segundos = None
+    extrair_instrumento = None
+
 router = APIRouter()
 
 BASE_DIR = Path(__file__).resolve().parents[3]  # Chega à pasta 'backend'
@@ -152,3 +163,111 @@ async def delete_audio(
     # Apagar da base de dados
     AudioQueries.delete_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     return
+
+
+# ==========================================
+# Audio Processing Endpoints
+# ==========================================
+
+@router.post("/{audio_id}/adjust-bpm")
+async def adjust_audio_bpm(
+    audio_id: str,
+    target_bpm: float = 120.0,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Adjust BPM of audio file"""
+    if not ajustar_bpm_automatico:
+        raise HTTPException(status_code=501, detail="BPM adjustment not available")
+    
+    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    if not audio_record or str(audio_record.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    input_path = Path(audio_record.file_path)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    output_filename = f"{uuid.uuid4()}_adjusted_bpm.wav"
+    output_path = UPLOAD_DIR / output_filename
+    
+    try:
+        ajustar_bpm_automatico(str(input_path), str(output_path), target_bpm)
+        return FileResponse(path=str(output_path), media_type="audio/wav", filename=output_filename)
+    except Exception as e:
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(status_code=500, detail=f"BPM adjustment failed: {str(e)}")
+
+
+@router.post("/{audio_id}/cut")
+async def cut_audio(
+    audio_id: str,
+    duration_seconds: int = 30,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Cut audio to specified duration"""
+    if not cortar_audio_para_30_segundos:
+        raise HTTPException(status_code=501, detail="Audio cutting not available")
+    
+    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    if not audio_record or str(audio_record.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    input_path = Path(audio_record.file_path)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    output_filename = f"{uuid.uuid4()}_cut.wav"
+    output_path = UPLOAD_DIR / output_filename
+    
+    try:
+        cortar_audio_para_30_segundos(str(input_path), str(output_path), duration_seconds)
+        return FileResponse(path=str(output_path), media_type="audio/wav", filename=output_filename)
+    except Exception as e:
+        if output_path.exists():
+            output_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Audio cutting failed: {str(e)}")
+
+
+@router.post("/{audio_id}/separate-tracks")
+async def separate_audio_tracks(
+    audio_id: str,
+    instrument: str = "guitarra",
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Separate instrument tracks from audio"""
+    if not extrair_instrumento:
+        raise HTTPException(status_code=501, detail="Track separation not available")
+    
+    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    if not audio_record or str(audio_record.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    input_path = Path(audio_record.file_path)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    try:
+        # Change to the directory where demucs will output
+        import os
+        original_cwd = os.getcwd()
+        os.chdir(UPLOAD_DIR)
+        
+        extrair_instrumento(str(input_path), instrument)
+        
+        # Find the generated file
+        base_name = input_path.stem
+        output_filename = f"{base_name}_{instrument}.wav"
+        output_path = UPLOAD_DIR / output_filename
+        
+        os.chdir(original_cwd)
+        
+        if output_path.exists():
+            return FileResponse(path=str(output_path), media_type="audio/wav", filename=output_filename)
+        else:
+            raise HTTPException(status_code=500, detail="Track separation failed - output not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Track separation failed: {str(e)}")

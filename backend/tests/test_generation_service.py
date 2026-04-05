@@ -3,7 +3,7 @@ Tests for GenerationService
 """
 
 import pytest
-from app.services.generation_service import GenerationService
+from backend.app.services.generation_service import GenerationService
 
 
 class TestGenerationService:
@@ -69,7 +69,7 @@ class TestGenerationQueries:
     def test_create_generation_query(self, test_db_session, test_user_data, test_project_data):
         """Test creating generation record"""
         # TODO: Implement test
-        from app.data.queries import UserQueries, ProjectQueries, GenerationQueries
+        from backend.app.data.queries import UserQueries, ProjectQueries, GenerationQueries
         
         user = UserQueries.create_user(
             test_db_session,

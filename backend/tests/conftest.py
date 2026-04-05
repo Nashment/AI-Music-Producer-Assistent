@@ -5,8 +5,8 @@ Pytest configuration and fixtures
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from app.data.database import Database
-from app.data.models import Base
+from backend.app.data.database import Database
+from backend.app.data.models import Base
 
 
 @pytest.fixture(scope="session")

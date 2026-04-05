@@ -3,8 +3,8 @@ Tests for UserService
 """
 
 import pytest
-from app.services.user_service import UserService
-from app.data.queries import UserQueries
+from backend.app.services.user_service import UserService
+from backend.app.data.queries import UserQueries
 
 
 class TestUserService:

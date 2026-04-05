@@ -2,9 +2,28 @@
 Generation endpoints - Music generation from AI
 """
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+import uuid
+from pathlib import Path
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from enum import Enum
+from sqlalchemy.orm import Session
+
+from backend.app.api.dependencies import get_db, get_current_user_id
+from backend.app.data import AudioQueries
+
+# Audio processing utilities
+try:
+    from backend.worker.audio_utils.audio_to_tablature import (
+        extrair_midi_do_audio, converter_midi_para_ly, 
+        forcar_tablatura_no_ly, compilar_pdf_lilypond
+    )
+    from backend.worker.audio_utils.audio_to_partitura import exportar_pdf_automatico
+except ImportError as e:
+    print(f"Warning: Could not import audio processing modules: {e}")
+    extrair_midi_do_audio = None
+    exportar_pdf_automatico = None
 
 router = APIRouter()
 
@@ -117,3 +136,96 @@ async def delete_generation(generation_id: str):
     """Delete generation result"""
     # TODO: Implement deletion
     raise HTTPException(status_code=501, detail="Not implemented")
+
+
+# ==========================================
+# Audio Processing Endpoints (Tablature & Partitura)
+# ==========================================
+
+@router.post("/tablature/{audio_id}")
+async def generate_tablature_from_audio(
+    audio_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Generate tablature PDF from audio file"""
+    if not all([extrair_midi_do_audio, converter_midi_para_ly, forcar_tablatura_no_ly, compilar_pdf_lilypond]):
+        raise HTTPException(status_code=501, detail="Tablature generation not available")
+    
+    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    if not audio_record or str(audio_record.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    input_path = Path(audio_record.file_path)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    # Use a temp directory for processing
+    from backend.app.core.config import settings
+    temp_dir = Path(settings.AUDIO_UPLOAD_DIR)
+    base_name = input_path.stem
+    midi_path = temp_dir / f"{base_name}.mid"
+    ly_path = temp_dir / f"{base_name}.ly"
+    pdf_path = temp_dir / f"{base_name}_tablature.pdf"
+    
+    try:
+        if extrair_midi_do_audio(str(input_path), str(midi_path)) and \
+           converter_midi_para_ly(str(midi_path), str(ly_path)) and \
+           forcar_tablatura_no_ly(str(ly_path)) and \
+           compilar_pdf_lilypond(str(ly_path)):
+            if pdf_path.exists():
+                return FileResponse(path=str(pdf_path), media_type="application/pdf", filename=f"{base_name}_tablature.pdf")
+            else:
+                raise HTTPException(status_code=500, detail="PDF generation failed")
+        else:
+            raise HTTPException(status_code=500, detail="Tablature generation failed")
+    except Exception as e:
+        # Clean up temp files
+        for path in [midi_path, ly_path]:
+            if path.exists():
+                path.unlink()
+        raise HTTPException(status_code=500, detail=f"Tablature generation failed: {str(e)}")
+
+
+@router.post("/partitura/{audio_id}")
+async def generate_partitura_from_audio(
+    audio_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Generate musical score PDF from audio file"""
+    if not exportar_pdf_automatico:
+        raise HTTPException(status_code=501, detail="Partitura generation not available")
+    
+    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    if not audio_record or str(audio_record.user_id) != user_id:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    
+    input_path = Path(audio_record.file_path)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    from backend.app.core.config import settings
+    temp_dir = Path(settings.AUDIO_UPLOAD_DIR)
+    base_name = input_path.stem
+    midi_path = temp_dir / f"{base_name}.mid"
+    pdf_path = temp_dir / f"{base_name}_partitura.pdf"
+    
+    try:
+        # First extract MIDI if needed
+        if not midi_path.exists():
+            if extrair_midi_do_audio:
+                extrair_midi_do_audio(str(input_path), str(midi_path))
+            else:
+                raise HTTPException(status_code=501, detail="MIDI extraction not available")
+        
+        result = exportar_pdf_automatico(str(midi_path), str(pdf_path))
+        if result and pdf_path.exists():
+            return FileResponse(path=str(pdf_path), media_type="application/pdf", filename=f"{base_name}_partitura.pdf")
+        else:
+            raise HTTPException(status_code=500, detail="Partitura generation failed")
+    except Exception as e:
+        # Clean up temp files
+        if midi_path.exists():
+            midi_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Partitura generation failed: {str(e)}")

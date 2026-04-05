@@ -4,9 +4,9 @@ FastAPI Application Factory
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
-from app.api.router import router
-from app.data.database import db
+from backend.app.core.config import settings
+from backend.app.api.router import router
+from backend.app.data.database import db
 
 
 def create_app() -> FastAPI:

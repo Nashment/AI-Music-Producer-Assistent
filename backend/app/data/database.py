@@ -42,11 +42,12 @@ class Database:
         """Get database session"""
         return self.SessionLocal()
 
-    def init_db(self):
+    async def init_db(self):
         """Initialize database tables"""
-        # Aqui, mais tarde, vamos importar o teu ficheiro de models
-        # e fazer algo como: Base.metadata.create_all(bind=self.engine)
-        pass
+        from backend.app.data.models import Base
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("✓ Database tables initialized")
 
     def close_db(self):
         """Close database connection"""

@@ -3,7 +3,7 @@ Tests for AudioService
 """
 
 import pytest
-from app.services.audio_service import AudioService
+from backend.app.services.audio_service import AudioService
 
 
 class TestAudioService:
@@ -48,7 +48,7 @@ class TestAudioQueries:
     def test_create_audio_file_query(self, test_db_session, test_user_data):
         """Test creating audio file record"""
         # TODO: Implement test
-        from app.data.queries import UserQueries, AudioQueries
+        from backend.app.data.queries import UserQueries, AudioQueries
         
         user = UserQueries.create_user(
             test_db_session,

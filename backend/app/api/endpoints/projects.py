@@ -2,9 +2,14 @@
 Projects endpoints - Project management
 """
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+import uuid
+from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel, ConfigDict
 from typing import List
+from sqlalchemy.orm import Session
+
+from backend.app.services.project_service import ProjectService
+from backend.app.api.dependencies import get_db, get_current_user_id
 
 router = APIRouter()
 
@@ -18,14 +23,13 @@ class ProjectCreate(BaseModel):
 
 class ProjectResponse(BaseModel):
     """Project response schema"""
-    id: int
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: uuid.UUID
     title: str
     description: str
     tempo: int
-    user_id: int
-
-    class Config:
-        from_attributes = True
+    user_id: uuid.UUID
 
 
 class ProjectUpdate(BaseModel):
@@ -36,7 +40,11 @@ class ProjectUpdate(BaseModel):
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(project_data: ProjectCreate):
+async def create_project(
+    project_data: ProjectCreate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
     """
     Create a new music project
     
@@ -46,24 +54,38 @@ async def create_project(project_data: ProjectCreate):
     Returns:
         Created project information
     """
-    # TODO: Implement project creation via service
-    raise HTTPException(status_code=501, detail="Not implemented")
+    service = ProjectService(db)
+    project = await service.create_project(
+        user_id=user_id,
+        title=project_data.title,
+        description=project_data.description,
+        tempo=project_data.tempo
+    )
+    return project
 
 
 @router.get("", response_model=List[ProjectResponse])
-async def list_user_projects():
+async def list_user_projects(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
     """
     Get all projects for authenticated user
     
     Returns:
         List of user projects
     """
-    # TODO: Implement list projects
-    raise HTTPException(status_code=501, detail="Not implemented")
+    service = ProjectService(db)
+    projects = await service.list_user_projects(user_id=user_id)
+    return projects
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: int):
+async def get_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
     """
     Get specific project by ID
     
@@ -73,19 +95,39 @@ async def get_project(project_id: int):
     Returns:
         Project details
     """
-    # TODO: Implement get project
-    raise HTTPException(status_code=501, detail="Not implemented")
+    service = ProjectService(db)
+    project = await service.get_project(project_id=project_id, user_id=user_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: int, project_update: ProjectUpdate):
+async def update_project(
+    project_id: str,
+    project_update: ProjectUpdate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
     """Update project information"""
-    # TODO: Implement project update
-    raise HTTPException(status_code=501, detail="Not implemented")
+    service = ProjectService(db)
+    update_dict = project_update.model_dump(exclude_unset=True)
+    project = await service.update_project(
+        project_id=project_id,
+        user_id=user_id,
+        update_data=update_dict
+    )
+    return project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_project(project_id: int):
+async def delete_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
     """Delete a project"""
-    # TODO: Implement project deletion
-    raise HTTPException(status_code=501, detail="Not implemented")
+    service = ProjectService(db)
+    success = await service.delete_project(project_id=project_id, user_id=user_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")

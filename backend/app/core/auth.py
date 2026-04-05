@@ -8,7 +8,7 @@ import jwt
 import os
 from enum import Enum
 
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 class OAuthProvider(str, Enum):

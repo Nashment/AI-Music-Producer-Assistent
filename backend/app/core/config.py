@@ -5,6 +5,10 @@ Configuration module for the application
 import os
 from functools import lru_cache
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class Settings:

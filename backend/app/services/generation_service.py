@@ -23,7 +23,7 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import worker modules: {e}")
 
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 class GenerationStatus(str, Enum):
