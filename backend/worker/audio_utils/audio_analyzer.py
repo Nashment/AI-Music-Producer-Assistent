@@ -1,6 +1,6 @@
 import librosa
 import numpy as np
-from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
+# from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor  # Commented out for testing
 
 
 def obter_templates_acordes():

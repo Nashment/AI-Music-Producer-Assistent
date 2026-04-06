@@ -4,6 +4,7 @@ SQL Queries and Database Operations (Privacy-First & UUID Base)
 
 import uuid
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from datetime import datetime
 from typing import List, Optional
 from .models import User, Project, AudioFile, Generation, GenerationStatusEnum, OAuthProvider
@@ -76,43 +77,51 @@ class ProjectQueries:
     """Project database queries"""
 
     @staticmethod
-    def create_project(db: Session, user_id: uuid.UUID, title: str, description: str, tempo: int) -> Project:
+    async def create_project(db: Session, user_id: uuid.UUID, title: str, description: str, tempo: int) -> Project:
         """Create new project"""
         project = Project(user_id=user_id, title=title, description=description, tempo=tempo)
         db.add(project)
-        db.commit()
-        db.refresh(project)
+        await db.commit()
+        await db.refresh(project)
         return project
 
     @staticmethod
-    def get_project(db: Session, project_id: uuid.UUID) -> Optional[Project]:
+    async def get_project(db: Session, project_id: uuid.UUID) -> Optional[Project]:
         """Get project by UUID"""
-        return db.query(Project).filter(Project.id == project_id).first()
+        stmt = select(Project).where(Project.id == project_id)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_user_projects(db: Session, user_id: uuid.UUID) -> List[Project]:
+    async def get_user_projects(db: Session, user_id: uuid.UUID) -> List[Project]:
         """Get all projects for user"""
-        return db.query(Project).filter(Project.user_id == user_id).order_by(Project.created_at.desc()).all()
+        stmt = select(Project).where(Project.user_id == user_id).order_by(Project.created_at.desc())
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
     @staticmethod
-    def update_project(db: Session, project_id: uuid.UUID, **kwargs) -> Optional[Project]:
+    async def update_project(db: Session, project_id: uuid.UUID, **kwargs) -> Optional[Project]:
         """Update project fields"""
-        project = db.query(Project).filter(Project.id == project_id).first()
+        stmt = select(Project).where(Project.id == project_id)
+        result = await db.execute(stmt)
+        project = result.scalar_one_or_none()
         if project:
             for key, value in kwargs.items():
                 if hasattr(project, key):
                     setattr(project, key, value)
-            db.commit()
-            db.refresh(project)
+            await db.commit()
+            await db.refresh(project)
         return project
 
     @staticmethod
-    def delete_project(db: Session, project_id: uuid.UUID) -> bool:
+    async def delete_project(db: Session, project_id: uuid.UUID) -> bool:
         """Delete project"""
-        project = db.query(Project).filter(Project.id == project_id).first()
+        stmt = select(Project).where(Project.id == project_id)
+        result = await db.execute(stmt)
+        project = result.scalar_one_or_none()
         if project:
-            db.delete(project)
-            db.commit()
+            await db.delete(project)
+            await db.commit()
             return True
         return False
 

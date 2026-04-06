@@ -5,6 +5,7 @@ Database connection and session management
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from backend.app.core.config import settings
 
 
@@ -22,8 +23,8 @@ class Database:
         """
         self.database_url = database_url or settings.DATABASE_URL
         
-        # Create engine with connection pooling
-        self.engine = create_engine(
+        # Create async engine
+        self.engine = create_async_engine(
             self.database_url,
             echo=settings.DB_ECHO,
             pool_pre_ping=True,  # Verify connections are alive
@@ -31,14 +32,15 @@ class Database:
             max_overflow=20,
         )
         
-        # Create session factory
+        # Create async session factory
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
             bind=self.engine,
+            class_=AsyncSession,
         )
 
-    def get_session(self) -> Session:
+    def get_session(self) -> AsyncSession:
         """Get database session"""
         return self.SessionLocal()
 
@@ -53,13 +55,13 @@ class Database:
         """Close database connection"""
         self.engine.dispose()
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Check database connection health"""
         from sqlalchemy import text  # Necessário para o SELECT 1 no SQLAlchemy 2.0+
 
         try:
-            with self.engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
+            async with self.engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
             return True
         except Exception as e:
             print(f"Database health check failed: {e}")

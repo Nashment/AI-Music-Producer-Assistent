@@ -30,7 +30,7 @@ class ProjectService:
             raise ValueError("O título do projeto não pode estar vazio.")
 
         try:
-            projeto = ProjectQueries.create_project(
+            projeto = await ProjectQueries.create_project(
                 db=self.db,
                 user_id=uuid.UUID(user_id),
                 title=clean_title,
@@ -44,7 +44,7 @@ class ProjectService:
 
     async def get_project(self, project_id: str, user_id: str):
         """Get project details with authorization check"""
-        project = ProjectQueries.get_project(db=self.db, project_id=uuid.UUID(project_id))
+        project = await ProjectQueries.get_project(db=self.db, project_id=uuid.UUID(project_id))
 
         if not project:
             return None
@@ -57,7 +57,7 @@ class ProjectService:
 
     async def list_user_projects(self, user_id: str):
         """List all projects for a user"""
-        projetos = ProjectQueries.get_user_projects(db=self.db, user_id=uuid.UUID(user_id))
+        projetos = await ProjectQueries.get_user_projects(db=self.db, user_id=uuid.UUID(user_id))
         return projetos
 
     async def update_project(self, project_id: str, user_id: str, update_data: dict):
@@ -66,7 +66,7 @@ class ProjectService:
         await self.get_project(project_id, user_id)
 
         # 2. Se não deu erro de permissão acima, podemos atualizar em segurança
-        projeto_atualizado = ProjectQueries.update_project(
+        projeto_atualizado = await ProjectQueries.update_project(
             db=self.db,
             project_id=uuid.UUID(project_id),
             **update_data  # Desempacota o dicionário (ex: {"title": "Novo Título", "tempo": 140})
@@ -80,7 +80,7 @@ class ProjectService:
 
         # 2. Apaga o projeto. A lógica de CASCADE que definimos nos modelos
         #    (ondelete="CASCADE") vai limpar automaticamente as gerações associadas na base de dados!
-        sucesso = ProjectQueries.delete_project(db=self.db, project_id=uuid.UUID(project_id))
+        sucesso = await ProjectQueries.delete_project(db=self.db, project_id=uuid.UUID(project_id))
         return sucesso
 
     async def list_project_generations(self, project_id: str, user_id: str):
