@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from backend.app.services import AudioService
@@ -51,7 +51,7 @@ class AudioAnalysisResponse(BaseModel):
 async def upload_audio(
         project_id: Optional[str] = None,
         file: UploadFile = File(...),
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         user_id: str = Depends(get_current_user_id)
 ):
     """Upload and analyze audio file"""
@@ -103,12 +103,12 @@ async def upload_audio(
 @router.get("/analysis/{audio_id}", response_model=AudioAnalysisResponse)
 async def get_audio_analysis(
         audio_id: str,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         user_id: str = Depends(get_current_user_id)
 ):
     """Get previously computed audio analysis metadata"""
 
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
 
     if not audio_record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Análise de áudio não encontrada.")
@@ -122,11 +122,11 @@ async def get_audio_analysis(
 @router.get("/{audio_id}")
 async def get_audio_file(
         audio_id: str,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         user_id: str = Depends(get_current_user_id)
 ):
     """Download the actual audio file"""
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
 
     if not audio_record or not Path(audio_record.file_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ficheiro físico não encontrado no servidor.")
@@ -140,11 +140,11 @@ async def get_audio_file(
 @router.delete("/{audio_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_audio(
         audio_id: str,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         user_id: str = Depends(get_current_user_id)
 ):
     """Delete audio file from DB and disk"""
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
 
     if not audio_record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Áudio não encontrado.")
@@ -161,7 +161,7 @@ async def delete_audio(
             print(f"Aviso: Não foi possível apagar o ficheiro físico: {e}")
 
     # Apagar da base de dados
-    AudioQueries.delete_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    await AudioQueries.delete_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     return
 
 
@@ -173,14 +173,14 @@ async def delete_audio(
 async def adjust_audio_bpm(
     audio_id: str,
     target_bpm: float = 120.0,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Adjust BPM of audio file"""
     if not ajustar_bpm_automatico:
         raise HTTPException(status_code=501, detail="BPM adjustment not available")
     
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     if not audio_record or str(audio_record.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Audio not found")
     
@@ -204,14 +204,14 @@ async def adjust_audio_bpm(
 async def cut_audio(
     audio_id: str,
     duration_seconds: int = 30,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Cut audio to specified duration"""
     if not cortar_audio_para_30_segundos:
         raise HTTPException(status_code=501, detail="Audio cutting not available")
     
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     if not audio_record or str(audio_record.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Audio not found")
     
@@ -235,14 +235,14 @@ async def cut_audio(
 async def separate_audio_tracks(
     audio_id: str,
     instrument: str = "guitarra",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Separate instrument tracks from audio"""
     if not extrair_instrumento:
         raise HTTPException(status_code=501, detail="Track separation not available")
     
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     if not audio_record or str(audio_record.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Audio not found")
     

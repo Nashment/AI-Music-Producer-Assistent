@@ -1,6 +1,5 @@
 import librosa
 import numpy as np
-# from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor  # Commented out for testing
 
 
 def obter_templates_acordes():
@@ -43,30 +42,40 @@ def detetar_tom_base(chroma):
 
 def ajustar_tom_pela_progressao(tom_ks, progressao):
     """Corrige modo (Maior/Menor) pela progressão de acordes"""
+    print(f"DEBUG: tom_ks = {tom_ks}, progressao = {progressao}")
+
     if len(progressao) == 0:
+        print("DEBUG: Progressão vazia, retornando tom_ks")
         return tom_ks
 
     primeiro_acorde = progressao[0]
     ultimo_acorde = progressao[-1]
+    print(f"DEBUG: primeiro_acorde = {primeiro_acorde}, ultimo_acorde = {ultimo_acorde}")
 
     notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     nota_tom, modo = tom_ks.split(" ")
     idx = notas.index(nota_tom)
+    print(f"DEBUG: nota_tom = {nota_tom}, modo = {modo}, idx = {idx}")
 
     if modo == "Maior":
         idx_relativa = (idx - 3) % 12
         acorde_relativo_menor = notas[idx_relativa] + "m"
+        print(f"DEBUG: Modo Maior - idx_relativa = {idx_relativa}, acorde_relativo_menor = {acorde_relativo_menor}")
 
         if primeiro_acorde == acorde_relativo_menor or ultimo_acorde == acorde_relativo_menor:
+            print(f"DEBUG: Encontrado {acorde_relativo_menor}, retornando {notas[idx_relativa]} Menor")
             return notas[idx_relativa] + " Menor"
 
     elif modo == "Menor":
         idx_relativa = (idx + 3) % 12
         acorde_relativo_maior = notas[idx_relativa]
+        print(f"DEBUG: Modo Menor - idx_relativa = {idx_relativa}, acorde_relativo_maior = {acorde_relativo_maior}")
 
         if primeiro_acorde == acorde_relativo_maior or ultimo_acorde == acorde_relativo_maior:
+            print(f"DEBUG: Encontrado {acorde_relativo_maior}, retornando {notas[idx_relativa]} Maior")
             return notas[idx_relativa] + " Maior"
 
+    print(f"DEBUG: Nenhuma correção feita, retornando {tom_ks}")
     return tom_ks
 
 
@@ -88,30 +97,53 @@ def analisar_audio_completo(caminho_wav):
     vetores_acordes = np.array(list(templates.values()))
 
     frames_por_segundo = sr / 4096
-    tamanho_bloco = int(frames_por_segundo * 0.5)
-    if tamanho_bloco == 0: tamanho_bloco = 1
+    tamanho_bloco = int(frames_por_segundo * 0.75)  # meio-termo entre 0.5 e 1.5
+    if tamanho_bloco == 0:
+        tamanho_bloco = 1
 
-    acordes_detetados = []
+    # --- Deteção de acordes com filtragem de artefactos ---
+    acordes_brutos = []
     for i in range(0, chroma.shape[1], tamanho_bloco):
         bloco = chroma[:, i:i + tamanho_bloco]
-        if bloco.shape[1] == 0: continue
-        correlacoes = [np.dot(np.mean(bloco, axis=1), t) for t in vetores_acordes]
+        if bloco.shape[1] == 0:
+            continue
+
+        # Normaliza o bloco para não ser afetado pelo volume
+        media_bloco = np.mean(bloco, axis=1)
+        norma = np.linalg.norm(media_bloco)
+        if norma > 0:
+            media_bloco = media_bloco / norma
+
+        correlacoes = [np.dot(media_bloco, t) for t in vetores_acordes]
         melhor_acorde = nomes_acordes[np.argmax(correlacoes)]
-        if len(acordes_detetados) == 0 or acordes_detetados[-1] != melhor_acorde:
-            acordes_detetados.append(melhor_acorde)
+        acordes_brutos.append(melhor_acorde)
+    print(f"DEBUG: acordes_brutos = {acordes_brutos}")
+    # Filtra acordes que aparecem menos de MIN_BLOCOS consecutivos (artefactos de transição)
+    MIN_BLOCOS = 2  # remove o filtro de duração por agora
+    acordes_detetados = []
+    i = 0
+    while i < len(acordes_brutos):
+        acorde_atual = acordes_brutos[i]
+        count = 1
+        while i + count < len(acordes_brutos) and acordes_brutos[i + count] == acorde_atual:
+            count += 1
+        if count >= MIN_BLOCOS:
+            if len(acordes_detetados) == 0 or acordes_detetados[-1] != acorde_atual:
+                acordes_detetados.append(acorde_atual)
+        i += count
 
     tom_matematico = detetar_tom_base(chroma)
+    print(f"DEBUG: tom_matematico = {tom_matematico}")
+    print(f"DEBUG: acordes_detetados = {acordes_detetados}")
     tom_corrigido = ajustar_tom_pela_progressao(tom_matematico, acordes_detetados)
+    print(f"DEBUG: tom_corrigido = {tom_corrigido}")
 
-    # 2. RETORNO ALTERADO: Agora devolvemos um dicionário com tudo o que o serviço pediu
     return {
         "bpm": round(bpm),
         "key": tom_corrigido,
         "chords": acordes_detetados,
         "duration": duracao,
         "sample_rate": sr,
-        # O librosa não deteta time_signature (compasso) facilmente,
-        # pelo que podemos deixar None ou predefinir para "4/4"
         "time_signature": None
     }
 
@@ -120,9 +152,10 @@ if __name__ == "__main__":
     ficheiro = "musiquinha para a IA.wav"
 
     try:
-        bpm_resultado, tom_resultado, progressao = analisar_audio_completo(ficheiro)
-        print(f"Tom: {tom_resultado}")
-        print(f"BPM: {bpm_resultado} batidas por minuto")
-        print(f"Progressao: {' -> '.join(progressao)}")
+        resultado = analisar_audio_completo(ficheiro)
+        print(f"Tom: {resultado['key']}")
+        print(f"BPM: {resultado['bpm']} batidas por minuto")
+        print(f"Progressao: {' -> '.join(resultado['chords'])}")
+        print(f"Duração: {resultado['duration']:.2f}s")
     except Exception as e:
         print(f"Erro ao ler o ficheiro: {e}")

@@ -5,6 +5,8 @@ Data access service for OAuth operations (Privacy-First & UUID Base)
 import uuid
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from .models import User, OAuthProvider
 
 
@@ -12,8 +14,8 @@ class OAuthQueries:
     """OAuth and user database operations"""
 
     @staticmethod
-    def get_or_create_user(
-        db: Session,
+    async def get_or_create_user(
+        db: AsyncSession,
         oauth_provider: OAuthProvider,
         oauth_id: str,
         username: str
@@ -32,10 +34,12 @@ class OAuthQueries:
             User object (existente ou recém-criado)
         """
         # Tenta encontrar o utilizador pela combinação provedor + ID
-        user = db.query(User).filter(
+        stmt = select(User).where(
             User.oauth_provider == oauth_provider,
             User.oauth_id == oauth_id
-        ).first()
+        )
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
 
         # Se já existe, devolve-o logo (já não precisamos de atualizar tokens na BD)
         if user:
@@ -48,33 +52,39 @@ class OAuthQueries:
             username=username
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
         return user
 
     @staticmethod
-    def get_user_by_id(db: Session, user_id: uuid.UUID) -> Optional[User]:
+    async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
         """Get user by UUID"""
-        return db.query(User).filter(User.id == user_id).first()
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_user_by_oauth(
-        db: Session,
+    async def get_user_by_oauth(
+        db: AsyncSession,
         oauth_provider: OAuthProvider,
         oauth_id: str
     ) -> Optional[User]:
         """Get user by OAuth provider and provider's user ID"""
-        return db.query(User).filter(
+        stmt = select(User).where(
             User.oauth_provider == oauth_provider,
             User.oauth_id == oauth_id
-        ).first()
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def delete_user(db: Session, user_id: uuid.UUID) -> bool:
+    async def delete_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
         """Delete user account"""
-        user = db.query(User).filter(User.id == user_id).first()
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
         if user:
-            db.delete(user)
-            db.commit()
+            await db.delete(user)
+            await db.commit()
             return True
         return False

@@ -38,6 +38,7 @@ class Database:
             autoflush=False,
             bind=self.engine,
             class_=AsyncSession,
+            expire_on_commit=False,  # Prevent lazy loading issues after commit
         )
 
     def get_session(self) -> AsyncSession:

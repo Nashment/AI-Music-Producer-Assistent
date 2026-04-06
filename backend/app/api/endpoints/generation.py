@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from enum import Enum
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.api.dependencies import get_db, get_current_user_id
 from backend.app.data import AudioQueries
@@ -145,14 +145,14 @@ async def delete_generation(generation_id: str):
 @router.post("/tablature/{audio_id}")
 async def generate_tablature_from_audio(
     audio_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Generate tablature PDF from audio file"""
     if not all([extrair_midi_do_audio, converter_midi_para_ly, forcar_tablatura_no_ly, compilar_pdf_lilypond]):
         raise HTTPException(status_code=501, detail="Tablature generation not available")
     
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     if not audio_record or str(audio_record.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Audio not found")
     
@@ -190,14 +190,14 @@ async def generate_tablature_from_audio(
 @router.post("/partitura/{audio_id}")
 async def generate_partitura_from_audio(
     audio_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Generate musical score PDF from audio file"""
     if not exportar_pdf_automatico:
         raise HTTPException(status_code=501, detail="Partitura generation not available")
     
-    audio_record = AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
+    audio_record = await AudioQueries.get_audio_file(db=db, audio_id=uuid.UUID(audio_id))
     if not audio_record or str(audio_record.user_id) != user_id:
         raise HTTPException(status_code=404, detail="Audio not found")
     

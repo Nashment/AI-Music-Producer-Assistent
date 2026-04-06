@@ -79,7 +79,7 @@ class AudioService:
 
             # 3. GUARDAR NA BASE DE DADOS
             # Delegamos a gravação à nossa classe AudioQueries
-            audio_record = AudioQueries.create_audio_file(
+            audio_record = await AudioQueries.create_audio_file(
                 db=self.db,
                 user_id=user_uuid,
                 project_id=project_uuid,

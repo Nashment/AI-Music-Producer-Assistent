@@ -5,10 +5,12 @@ Configuration module for the application
 import os
 from functools import lru_cache
 from typing import Optional
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Carregar .env da pasta backend
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 
 class Settings:
@@ -19,7 +21,7 @@ class Settings:
     # Database Configuration
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql://user:password@localhost:5432/music_ai_db"
+        "postgresql+asyncpg://user:password@localhost:5432/music_ai_db"
     )
     DB_ECHO: bool = os.getenv("DB_ECHO", "False").lower() == "true"
 

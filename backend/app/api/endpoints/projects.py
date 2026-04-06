@@ -6,7 +6,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, ConfigDict
 from typing import List
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.project_service import ProjectService
 from backend.app.api.dependencies import get_db, get_current_user_id
@@ -42,7 +42,7 @@ class ProjectUpdate(BaseModel):
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
     project_data: ProjectCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """
@@ -66,7 +66,7 @@ async def create_project(
 
 @router.get("", response_model=List[ProjectResponse])
 async def list_user_projects(
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """
@@ -83,7 +83,7 @@ async def list_user_projects(
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """
@@ -106,7 +106,7 @@ async def get_project(
 async def update_project(
     project_id: str,
     project_update: ProjectUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Update project information"""
@@ -123,7 +123,7 @@ async def update_project(
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(
     project_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
     """Delete a project"""

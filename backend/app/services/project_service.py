@@ -89,5 +89,5 @@ class ProjectService:
         await self.get_project(project_id, user_id)
 
         # 2. Vai buscar o histórico de gerações de IA deste projeto
-        geracoes = GenerationQueries.get_project_generations(db=self.db, project_id=uuid.UUID(project_id))
+        geracoes = await GenerationQueries.get_project_generations(db=self.db, project_id=uuid.UUID(project_id))
         return geracoes
