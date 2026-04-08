@@ -205,10 +205,11 @@ Ao `requirements.txt` já foram incluídas:
 - `basic_pitch` - Audio-to-MIDI (for tablature)
 
 **Ferramentas Externas Necessárias:**
-- **MuseScore 4** - Para conversão a sheet music
-- **LilyPond** - Para conversão a tablatura
-- **Demucs** - Para separação de instrumentos
-- **FFmpeg** - Para manipulação de áudio
+- **MuseScore 4** - Para conversão a sheet music (opcional)
+- **LilyPond** - Para conversão a tablatura (opcional)
+- **Demucs** - Para separação de instrumentos (opcional)
+- **FFmpeg** - Para manipulação de áudio (geralmente pré-instalado)
+- **basic_pitch** - Para conversão audio-to-MIDI (incluído via worker imports)
 
 ---
 

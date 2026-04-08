@@ -37,12 +37,12 @@ backend/
 │   ├── ai_models/            # AI model integrations
 │   ├── audio_utils/          # Audio processing utilities
 │   └── core/                 # Audio synthesis engine
-├── tests/                     # Unit and integration tests
+├── tests/                     # Unit and integration tests (placeholders)
 │   ├── conftest.py           # Pytest configuration
-│   ├── test_user_service.py
-│   ├── test_project_service.py
-│   ├── test_audio_service.py
-│   └── test_generation_service.py
+│   ├── test_user_service.py  # User service tests (TODO)
+│   ├── test_project_service.py # Project service tests (TODO)
+│   ├── test_audio_service.py # Audio service tests (TODO)
+│   └── test_generation_service.py # Generation service tests (TODO)
 └── generations/              # Generated files storage
     ├── audio/
     ├── partitura/
@@ -121,33 +121,51 @@ Once running, visit:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## Key Endpoints
+## Authentication
 
-### Users
-- `POST /api/v1/users/register` - Register user
-- `POST /api/v1/users/login` - User login
-- `GET /api/v1/users/me` - Get current user
+The backend uses OAuth 2.0 for authentication with support for Google, GitHub, and Microsoft providers. No passwords are stored in the database.
 
-### Projects
-- `POST /api/v1/projects` - Create project
-- `GET /api/v1/projects` - List user projects
-- `GET /api/v1/projects/{id}` - Get project details
-- `PUT /api/v1/projects/{id}` - Update project
-- `DELETE /api/v1/projects/{id}` - Delete project
+### OAuth Endpoints
+- `GET /api/v1/users/auth/{provider}/login` - Initiate OAuth flow
+- `POST /api/v1/users/auth/{provider}/callback` - Handle OAuth callback
+- `GET /api/v1/users/me` - Get current user profile (JWT protected)
 
-### Audio
-- `POST /api/v1/audio/upload` - Upload and analyze audio
-- `GET /api/v1/audio/{id}` - Download audio
+### JWT Tokens
+API endpoints are protected using JWT tokens. Include the token in the Authorization header:
+```
+Authorization: Bearer <jwt_token>
+```
 
-### Generation
-- `POST /api/v1/generation` - Submit generation request
-- `GET /api/v1/generation/{id}` - Get generation result
-- `GET /api/v1/generation/{id}/status` - Check generation status
+See `docs/OAUTH_SETUP.md` for configuring OAuth providers.
+
+## Asynchronous Processing
+
+The backend uses Celery for handling long-running tasks asynchronously:
+
+### Starting Celery Worker
+```bash
+celery -A app.worker worker --loglevel=info
+```
+
+### Celery Tasks
+- `generate_music` - Music generation via Suno API
+- `analyze_audio` - Audio feature extraction
+- `convert_to_partitura` - Sheet music generation
+- `convert_to_tablatura` - Tablature generation
+
+### Monitoring
+```bash
+# Flower dashboard for monitoring tasks
+celery -A app.worker flower
+```
+Access at: http://localhost:5555
 
 ## Testing
 
+**Status:** Test structure is prepared but tests are not yet implemented (placeholders only).
+
 ```bash
-# Run all tests
+# Run all tests (will show placeholders)
 pytest
 
 # Run with coverage
@@ -183,14 +201,19 @@ pytest -v
 - [x] Project structure and organization
 - [x] Basic API scaffolding
 - [x] Database schema design
-- [x] Service layer templates
-- [ ] Authentication & JWT tokens
-- [ ] Audio analysis implementation
-- [ ] LLM integration for music generation
-- [ ] MIDI synthesis with FluidSynth
-- [ ] Notation conversion (sheet music/tabs)
-- [ ] Celery async task processing
+- [x] Service layer implementation
+- [x] OAuth authentication (Google, GitHub, Microsoft)
+- [x] JWT token handling
+- [x] Audio analysis with Librosa
+- [x] Suno AI integration for music generation
+- [x] Celery async task processing
+- [x] Worker integration for audio processing
+- [x] Docker containerization
+- [ ] Unit tests implementation
 - [ ] WebSocket support for real-time updates
+- [ ] AWS S3 integration for file storage
+- [ ] Advanced MIDI synthesis
+- [ ] MuseScore/LilyPond integration for notation
 
 ## Development Notes
 

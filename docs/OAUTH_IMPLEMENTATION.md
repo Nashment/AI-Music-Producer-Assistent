@@ -88,35 +88,11 @@ JWT_EXPIRATION_HOURS=24
 
 ---
 
-### 🎨 Frontend Example (`OAUTH_FRONTEND_EXAMPLE.tsx`)
+### 🎨 Frontend Integration (Planned)
 
-#### Custom Hook: `useAuth()`
-```jsx
-const { loginWithProvider, handleOAuthCallback, logout, getAuthHeader } = useAuth();
-```
+The frontend OAuth integration is planned for future development. See `FRONTEND_STATUS.md` for details on the React SPA implementation.
 
-**Functions:**
-- `loginWithProvider(provider)` - Initiate OAuth flow
-- `handleOAuthCallback(code, provider)` - Handle OAuth callback
-- `logout()` - Clear auth data
-- `getAuthHeader()` - Get Authorization header
-- `getCurrentUser()` - Get logged-in user info
-- `isAuthenticated` - Boolean check
-
-#### Components:
-1. **LoginPage** - OAuth buttons (Google, GitHub, Microsoft)
-2. **OAuthCallback** - Handle OAuth callback from provider  
-3. **ProtectedRoute** - Route protection (redirect to login if not authenticated)
-4. **Dashboard** - Example authenticated page
-
-#### Router Setup:
-```jsx
-<Route path="/login" element={<LoginPage />} />
-<Route path="/auth/google/callback" element={<GoogleCallback />} />
-<Route path="/auth/github/callback" element={<GitHubCallback />} />
-<Route path="/auth/microsoft/callback" element={<MicrosoftCallback />} />
-<Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-```
+**Note:** Backend OAuth is fully implemented and ready for frontend integration.
 
 ---
 
