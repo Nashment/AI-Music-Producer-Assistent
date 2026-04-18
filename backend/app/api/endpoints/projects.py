@@ -4,39 +4,14 @@ Projects endpoints - Project management
 
 import uuid
 from fastapi import APIRouter, HTTPException, status, Depends
-from pydantic import BaseModel, ConfigDict
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services.project_service import ProjectService
 from backend.app.api.dependencies import get_db, get_current_user_id
+from backend.app.domain.dtos.endpoints.projects import ProjectCreate, ProjectResponse, ProjectUpdate
 
 router = APIRouter()
-
-
-class ProjectCreate(BaseModel):
-    """Project creation schema"""
-    title: str
-    description: str
-    tempo: int  # BPM
-
-
-class ProjectResponse(BaseModel):
-    """Project response schema"""
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: uuid.UUID
-    title: str
-    description: str
-    tempo: int
-    user_id: uuid.UUID
-
-
-class ProjectUpdate(BaseModel):
-    """Project update schema"""
-    title: str | None = None
-    description: str | None = None
-    tempo: int | None = None
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

@@ -151,7 +151,8 @@ class AudioQueries:
         sample_rate: int,
         bpm: Optional[int] = None,
         key: Optional[str] = None,
-        time_signature: Optional[str] = None
+        time_signature: Optional[str] = None,
+        parent_audio_id: Optional[uuid.UUID] = None
     ) -> AudioFile:
         """Create audio file record"""
         audio = AudioFile(
@@ -163,7 +164,8 @@ class AudioQueries:
             sample_rate=sample_rate,
             bpm=bpm,
             key=key,
-            time_signature=time_signature
+            time_signature=time_signature,
+            parent_audio_id=parent_audio_id
         )
         db.add(audio)
         await db.commit()

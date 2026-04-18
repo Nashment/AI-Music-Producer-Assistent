@@ -2,48 +2,208 @@
 User endpoints - OAuth authentication and user management
 """
 
-from fastapi import APIRouter, HTTPException, status, Query
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+import uuid
+from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.app.core.auth import AuthService
+from backend.app.data import UserQueries
+from backend.app.api.dependencies import get_db, get_current_user_id
+from backend.app.domain.dtos.endpoints.user import (
+    OAuthCallbackRequest,
+    OAuthStartResponse,
+    TokenResponse,
+    UserResponse,
+    UsernameUpdate,
+)
 
 router = APIRouter()
-
-
-class OAuthCallbackRequest(BaseModel):
-    """OAuth callback request"""
-    code: str
-    state: Optional[str] = None
-
-
-class UserResponse(BaseModel):
-    """User response schema"""
-    id: int
-    username: str
-    email: str
-    full_name: Optional[str] = None
-    profile_picture_url: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-class TokenResponse(BaseModel):
-    """Authentication token response"""
-    access_token: str
-    token_type: str
-    user: UserResponse
-
-
-class OAuthStartResponse(BaseModel):
-    """OAuth login start response with authorization URL"""
-    authorization_url: str
-    provider: str
 
 
 # ==========================================
 # OAuth Login Endpoints
 # ==========================================
+
+@router.get("/auth/google/login", response_model=OAuthStartResponse)
+async def start_google_oauth(redirect_uri: str = "http://localhost:3000/auth/google/callback"):
+    """Start Google OAuth login flow"""
+    try:
+        from authlib.integrations.requests_client import OAuth2Session
+        import os
+
+        client_id = os.getenv("GOOGLE_CLIENT_ID")
+        if not client_id:
+            raise HTTPException(status_code=500, detail="Google OAuth not configured")
+
+        google = OAuth2Session(client_id, redirect_uri=redirect_uri, scope="openid email profile")
+        uri, state = google.create_authorization_url("https://accounts.google.com/o/oauth2/auth")
+        return {"authorization_url": uri, "provider": "google"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth initialization failed: {str(e)}")
+
+
+@router.get("/auth/github/login", response_model=OAuthStartResponse)
+async def start_github_oauth(redirect_uri: str = "http://localhost:3000/auth/github/callback"):
+    """Start GitHub OAuth login flow"""
+    try:
+        from authlib.integrations.requests_client import OAuth2Session
+        import os
+
+        client_id = os.getenv("GITHUB_CLIENT_ID")
+        if not client_id:
+            raise HTTPException(status_code=500, detail="GitHub OAuth not configured")
+
+        github = OAuth2Session(client_id, redirect_uri=redirect_uri, scope="user:email")
+        uri, state = github.create_authorization_url("https://github.com/login/oauth/authorize")
+        return {"authorization_url": uri, "provider": "github"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth initialization failed: {str(e)}")
+
+
+@router.get("/auth/microsoft/login", response_model=OAuthStartResponse)
+async def start_microsoft_oauth(redirect_uri: str = "http://localhost:3000/auth/microsoft/callback"):
+    """Start Microsoft OAuth login flow"""
+    try:
+        from authlib.integrations.requests_client import OAuth2Session
+        import os
+
+        client_id = os.getenv("MICROSOFT_CLIENT_ID")
+        if not client_id:
+            raise HTTPException(status_code=500, detail="Microsoft OAuth not configured")
+
+        microsoft = OAuth2Session(client_id, redirect_uri=redirect_uri, scope="openid email profile")
+        uri, state = microsoft.create_authorization_url(
+            "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        )
+        return {"authorization_url": uri, "provider": "microsoft"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OAuth initialization failed: {str(e)}")
+
+
+# ==========================================
+# OAuth Callback Endpoints
+# ==========================================
+
+@router.post("/auth/google/callback", response_model=TokenResponse)
+async def google_oauth_callback(
+    request: OAuthCallbackRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Google OAuth callback handler"""
+    try:
+        auth_service = AuthService()
+        result = await auth_service.oauth_login_google(request.code, db)
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result.get("error"))
+
+        return TokenResponse(
+            access_token=result["access_token"],
+            token_type=result.get("token_type", "bearer"),
+            user=UserResponse(**result["user"])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+
+@router.post("/auth/github/callback", response_model=TokenResponse)
+async def github_oauth_callback(
+    request: OAuthCallbackRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """GitHub OAuth callback handler"""
+    try:
+        auth_service = AuthService()
+        result = await auth_service.oauth_login_github(request.code, db)
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result.get("error"))
+
+        return TokenResponse(
+            access_token=result["access_token"],
+            token_type=result.get("token_type", "bearer"),
+            user=UserResponse(**result["user"])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+
+@router.post("/auth/microsoft/callback", response_model=TokenResponse)
+async def microsoft_oauth_callback(
+    request: OAuthCallbackRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Microsoft OAuth callback handler"""
+    try:
+        auth_service = AuthService()
+        result = await auth_service.oauth_login_microsoft(request.code, db)
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result.get("error"))
+
+        return TokenResponse(
+            access_token=result["access_token"],
+            token_type=result.get("token_type", "bearer"),
+            user=UserResponse(**result["user"])
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+
+# ==========================================
+# User Profile Endpoints
+# ==========================================
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Get current authenticated user profile"""
+    user = await UserQueries.get_user_by_id(db=db, user_id=uuid.UUID(user_id))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_user_profile(
+    update_data: UsernameUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Update user profile (username)"""
+    user = await UserQueries.update_user(
+        db=db,
+        user_id=uuid.UUID(user_id),
+        username=update_data.username
+    )
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Delete user account"""
+    success = await UserQueries.delete_user(db=db, user_id=uuid.UUID(user_id))
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
 @router.get("/auth/google/login", response_model=OAuthStartResponse)
 async def start_google_oauth(redirect_uri: str = "http://localhost:3000/auth/google/callback"):

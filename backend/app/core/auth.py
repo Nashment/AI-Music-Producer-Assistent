@@ -35,20 +35,18 @@ class AuthService:
         self.algorithm = "HS256"
         self.token_expiration_hours = 24
 
-    def create_access_token(self, user_id: int, email: str) -> str:
+    def create_access_token(self, user_id: str) -> str:
         """
         Create JWT access token for authenticated user
         
         Args:
-            user_id: User database ID
-            email: User email
+            user_id: User UUID as string
             
         Returns:
             JWT token string
         """
         to_encode = {
             "sub": str(user_id),
-            "email": email,
             "exp": datetime.utcnow() + timedelta(hours=self.token_expiration_hours),
             "iat": datetime.utcnow()
         }
@@ -76,25 +74,24 @@ class AuthService:
             print("Invalid token")
             return None
 
-    async def oauth_login_google(self, code: str) -> Dict:
+    async def oauth_login_google(self, code: str, db) -> Dict:
         """
         Handle Google OAuth login flow
         
         Args:
             code: Authorization code from Google OAuth
+            db: Database session
             
         Returns:
             Dict with user info and JWT token
         """
         try:
-            # Import authlib only when needed
             from authlib.integrations.requests_client import OAuth2Session
             
             client_id = os.getenv("GOOGLE_CLIENT_ID")
             client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
             redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/auth/google/callback")
             
-            # Exchange code for token
             google = OAuth2Session(
                 client_id,
                 client_secret=client_secret,
@@ -106,30 +103,21 @@ class AuthService:
                 code=code
             )
             
-            # Get user info
             user_info = google.get("https://www.googleapis.com/oauth2/v2/userinfo").json()
             
-            # Find or create user
             user = await self._get_or_create_user(
+                db=db,
                 provider=OAuthProvider.GOOGLE,
                 provider_id=user_info.get("id"),
-                email=user_info.get("email"),
-                username=user_info.get("email").split("@")[0],
-                profile_picture_url=user_info.get("picture"),
-                full_name=user_info.get("name"),
-                access_token=token.get("access_token")
+                username=user_info.get("email", "").split("@")[0] or user_info.get("name", "user")
             )
             
-            # Create JWT token
-            jwt_token = self.create_access_token(user.id, user.email)
+            jwt_token = self.create_access_token(str(user.id))
             
             return {
                 "user": {
-                    "id": user.id,
-                    "email": user.email,
+                    "id": str(user.id),
                     "username": user.username,
-                    "full_name": user.full_name,
-                    "profile_picture_url": user.profile_picture_url
                 },
                 "access_token": jwt_token,
                 "token_type": "bearer"
@@ -138,12 +126,13 @@ class AuthService:
             print(f"Error in Google OAuth: {e}")
             return {"error": str(e)}
 
-    async def oauth_login_github(self, code: str) -> Dict:
+    async def oauth_login_github(self, code: str, db) -> Dict:
         """
         Handle GitHub OAuth login flow
         
         Args:
             code: Authorization code from GitHub OAuth
+            db: Database session
             
         Returns:
             Dict with user info and JWT token
@@ -155,7 +144,6 @@ class AuthService:
             client_secret = os.getenv("GITHUB_CLIENT_SECRET")
             redirect_uri = os.getenv("GITHUB_REDIRECT_URI", "http://localhost:3000/auth/github/callback")
             
-            # Exchange code for token
             github = OAuth2Session(
                 client_id,
                 client_secret=client_secret,
@@ -167,30 +155,21 @@ class AuthService:
                 code=code
             )
             
-            # Get user info
             user_info = github.get("https://api.github.com/user").json()
             
-            # Find or create user
             user = await self._get_or_create_user(
+                db=db,
                 provider=OAuthProvider.GITHUB,
                 provider_id=str(user_info.get("id")),
-                email=user_info.get("email"),
-                username=user_info.get("login"),
-                profile_picture_url=user_info.get("avatar_url"),
-                full_name=user_info.get("name"),
-                access_token=token.get("access_token")
+                username=user_info.get("login", "user")
             )
             
-            # Create JWT token
-            jwt_token = self.create_access_token(user.id, user.email)
+            jwt_token = self.create_access_token(str(user.id))
             
             return {
                 "user": {
-                    "id": user.id,
-                    "email": user.email,
+                    "id": str(user.id),
                     "username": user.username,
-                    "full_name": user.full_name,
-                    "profile_picture_url": user.profile_picture_url
                 },
                 "access_token": jwt_token,
                 "token_type": "bearer"
@@ -199,12 +178,13 @@ class AuthService:
             print(f"Error in GitHub OAuth: {e}")
             return {"error": str(e)}
 
-    async def oauth_login_microsoft(self, code: str) -> Dict:
+    async def oauth_login_microsoft(self, code: str, db) -> Dict:
         """
         Handle Microsoft OAuth login flow
         
         Args:
             code: Authorization code from Microsoft OAuth
+            db: Database session
             
         Returns:
             Dict with user info and JWT token
@@ -216,7 +196,6 @@ class AuthService:
             client_secret = os.getenv("MICROSOFT_CLIENT_SECRET")
             redirect_uri = os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:3000/auth/microsoft/callback")
             
-            # Exchange code for token
             microsoft = OAuth2Session(
                 client_id,
                 client_secret=client_secret,
@@ -228,30 +207,21 @@ class AuthService:
                 code=code
             )
             
-            # Get user info
             user_info = microsoft.get("https://graph.microsoft.com/v1.0/me").json()
             
-            # Find or create user
             user = await self._get_or_create_user(
+                db=db,
                 provider=OAuthProvider.MICROSOFT,
                 provider_id=user_info.get("id"),
-                email=user_info.get("userPrincipalName"),
-                username=user_info.get("mailNickname"),
-                profile_picture_url=None,  # Get from /me/photo if needed
-                full_name=user_info.get("displayName"),
-                access_token=token.get("access_token")
+                username=user_info.get("mailNickname") or user_info.get("displayName", "user")
             )
             
-            # Create JWT token
-            jwt_token = self.create_access_token(user.id, user.email)
+            jwt_token = self.create_access_token(str(user.id))
             
             return {
                 "user": {
-                    "id": user.id,
-                    "email": user.email,
+                    "id": str(user.id),
                     "username": user.username,
-                    "full_name": user.full_name,
-                    "profile_picture_url": user.profile_picture_url
                 },
                 "access_token": jwt_token,
                 "token_type": "bearer"
@@ -262,31 +232,31 @@ class AuthService:
 
     async def _get_or_create_user(
         self,
+        db,
         provider: OAuthProvider,
         provider_id: str,
-        email: str,
         username: str,
-        profile_picture_url: Optional[str] = None,
-        full_name: Optional[str] = None,
-        access_token: Optional[str] = None
     ):
         """
         Get existing user or create new one from OAuth data
         
         Args:
+            db: Database session
             provider: OAuth provider (google, github, microsoft)
             provider_id: User ID from provider
-            email: User email
             username: Username from provider
-            profile_picture_url: Profile picture URL
-            full_name: Full name from provider
-            access_token: OAuth access token
             
         Returns:
             User object
         """
-        # TODO: Implement with data accessor
-        # 1. Check if user exists by oauth_provider + oauth_id
-        # 2. If exists, update token if needed and return
-        # 3. If not exists, create new user
-        pass
+        from backend.app.data.oauth_queries import OAuthQueries
+        from backend.app.data.models import OAuthProvider as ModelOAuthProvider
+
+        model_provider = ModelOAuthProvider(provider.value)
+        user = await OAuthQueries.get_or_create_user(
+            db=db,
+            oauth_provider=model_provider,
+            oauth_id=provider_id,
+            username=username
+        )
+        return user

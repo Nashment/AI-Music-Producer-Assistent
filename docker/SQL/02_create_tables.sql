@@ -58,6 +58,7 @@ CREATE TABLE audio_files (
     bpm INTEGER,
     key VARCHAR(32),
     time_signature VARCHAR(32),
+    parent_audio_id UUID REFERENCES audio_files(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

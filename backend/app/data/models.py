@@ -83,6 +83,8 @@ class AudioFile(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # ondelete="SET NULL" mantém o ficheiro mesmo que o projeto seja apagado
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    # Referência ao áudio original (usado em cortes)
+    parent_audio_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id", ondelete="SET NULL"), nullable=True)
 
     file_path = Column(String(512), nullable=False)
     file_size = Column(Integer)
@@ -100,6 +102,7 @@ class AudioFile(Base):
     owner = relationship("User", back_populates="audio_files")
     project = relationship("Project", back_populates="audio_files")
     generations = relationship("Generation", back_populates="audio_file")
+    parent = relationship("AudioFile", remote_side="AudioFile.id", foreign_keys="AudioFile.parent_audio_id", backref="cuts")
 
 
 class Generation(Base):

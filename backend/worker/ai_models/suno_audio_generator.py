@@ -1,10 +1,8 @@
-import requests
-import time
 import os
+import requests
 
-API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"
+API_KEY = os.getenv("SUNO_API_KEY", "fbcf463a0aa472ce3f6e11c45a5434c1")
 BASE_URL = "https://api.sunoapi.org"
-STYLE_PROMPT = "Slow emotional electric blues guitar solo, soulful bends, vibrato, 70 BPM, Key of A Minor, Am-F-C-G progression, clean overdriven tone"
 
 headers = {
     "Authorization": f"Bearer {API_KEY}",
@@ -12,33 +10,35 @@ headers = {
 }
 
 
-def iniciar_geracao():
+def iniciar_geracao(style_prompt: str, title: str = "Generated Music", instrumental: bool = True, model: str = "V5") -> str | None:
+    """Submete um pedido de geração ao Suno e devolve o taskId, ou None em caso de erro."""
     url = f"{BASE_URL}/api/v1/generate"
     payload = {
         "customMode": True,
-        "instrumental": True,
-        "model": "V5",
-        "style": STYLE_PROMPT,
-        "title": "Solo Blues A Menor 70BPM",
+        "instrumental": instrumental,
+        "model": model,
+        "style": style_prompt,
+        "title": title,
         "callBackUrl": "https://webhook.site/vazio"
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:
             res = response.json()
             if res.get("code") == 200:
                 return res["data"]["taskId"]
-        print("Erro ao iniciar geracao:", response.text)
+        print("Erro ao iniciar geração:", response.text)
     except Exception as e:
-        print(f"Ocorreu um erro de rede ao iniciar: {e}")
+        print(f"Erro de rede ao iniciar geração: {e}")
     return None
 
 
-def verificar_estado(task_id):
+def verificar_estado(task_id: str) -> dict | None:
+    """Consulta o estado de uma tarefa Suno. Devolve o JSON da resposta ou None."""
     url = f"{BASE_URL}/api/v1/get_music_details?taskId={task_id}"
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=30)
         if response.status_code == 200:
             return response.json()
     except Exception as e:
@@ -46,50 +46,17 @@ def verificar_estado(task_id):
     return None
 
 
-def guardar_ficheiro(url, nome):
-    print(f"A descarregar: {nome}...")
+def guardar_ficheiro(url: str, caminho: str) -> bool:
+    """Descarrega um ficheiro de uma URL e guarda-o no caminho indicado. Devolve True em sucesso."""
+    print(f"A descarregar: {caminho}...")
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=120)
         if r.status_code == 200:
-            with open(nome, 'wb') as f:
+            with open(caminho, 'wb') as f:
                 f.write(r.content)
-            print(f"Guardado em: {os.path.join(os.getcwd(), nome)}")
-        else:
-            print(f"Falha ao descarregar. Codigo HTTP: {r.status_code}")
+            print(f"Guardado em: {caminho}")
+            return True
+        print(f"Falha ao descarregar. Código HTTP: {r.status_code}")
     except Exception as e:
-        print(f"Erro ao guardar o ficheiro no disco: {e}")
-
-
-def executor():
-    task_id = iniciar_geracao()
-    if not task_id:
-        return
-
-    print(f"Tarefa {task_id} iniciada. A aguardar...")
-
-    while True:
-        time.sleep(30)
-        dados = verificar_estado(task_id)
-
-        if dados and dados.get("code") == 200:
-            musicas = dados.get("data", [])
-
-            # Verificamos se o array tem dados e se o primeiro item ja tem o link de audio
-            if musicas and musicas[0].get("audio_url"):
-                print("\nSolos prontos! A iniciar download...")
-                for i, musica in enumerate(musicas):
-                    url_mp3 = musica["audio_url"]
-                    # Adicionei os ultimos 5 caracteres do task_id ao nome para nao sobrepor ficheiros antigos
-                    nome_arquivo = f"solo_blues_{task_id[-5:]}_{i + 1}.mp3"
-                    guardar_ficheiro(url_mp3, nome_arquivo)
-
-                print("\nProcesso concluido com sucesso!")
-                break  # Sai do loop porque o trabalho terminou
-            else:
-                print("Ainda a processar... (Aguardando os URLs dos MP3)")
-        else:
-            print("A verificar estado da tarefa...")
-
-
-if __name__ == "__main__":
-    executor()
+        print(f"Erro ao guardar o ficheiro: {e}")
+    return False
