@@ -126,7 +126,9 @@ Estrutura preparada com:
 - **Fixtures do pytest** (usuários, projetos, parâmetros de geração)
 - **Base de dados em memória** (SQLite) para testes isolados
 - **Testes de queries** diretas
-- **Testes de services** (templates para implementação)
+- **Testes de services** (templates preparados, mas não implementados)
+
+**Status:** Templates criados, implementação pendente.
 
 ---
 

@@ -1,4 +1,4 @@
-# 🎵 AI Music Producer Assistant - Documentation
+# 🎵 AI Music Producer Assistant
 
 > **Status:** Backend Complete, Frontend Pending (Academic Research Project - ISEL 2026)
 
@@ -24,64 +24,45 @@ The system is built on a modular, service-oriented architecture designed to hand
 4. **Multi-Format Output:** Translates generated compositions into synthesized audio and MIDI files.
 5. **Asynchronous Processing:** Celery workers handle heavy audio synthesis and AI model inference without blocking the API.
 
-## Current Implementation Status
+## Project Structure
 
-### ✅ Completed Components
-
-#### Backend (FastAPI)
-- RESTful API with endpoints for users, projects, audio, and generation
-- OAuth 2.0 authentication (Google, GitHub, Microsoft)
-- PostgreSQL database with SQLAlchemy ORM
-- Celery integration for asynchronous tasks
-- Audio processing with Librosa
-- Comprehensive error handling and logging
-
-#### Worker Integration
-- Suno AI API integration for music generation
-- Audio analysis tools (BPM detection, key extraction)
-- Audio processing utilities (cutting, BPM adjustment, track separation)
-- MIDI conversion and tablature generation
-- Celery task queue for background processing
-
-#### Docker & Infrastructure
-- Multi-service Docker Compose setup (PostgreSQL, Redis, Backend, pgAdmin)
-- Database initialization scripts
-- Health checks and service dependencies
-- Volume management for data persistence
-
-#### Documentation
-- Complete API documentation with OpenAPI/Swagger
-- OAuth setup guides for all providers
-- Worker integration details
-- Project structure and architecture overview
-
-### ❌ Pending Components
-
-#### Frontend
-- React SPA for user interface
-- Real-time status updates for generation tasks
-- Audio upload and playback interface
-- OAuth callback handling
-- Dashboard for managing projects and generations
-
-#### Testing
-- Unit tests for all services (currently placeholders)
-- Integration tests for API endpoints
-- End-to-end tests for complete workflows
-
-#### Additional Features
-- AWS S3 integration for cloud storage
-- LangChain for advanced LLM routing
-- WebSocket support for real-time updates
-- Advanced audio synthesis with FluidSynth
-- MuseScore/LilyPond integration for sheet music
+```
+AI-Music-Producer-Assistent/
+├── backend/                    # FastAPI backend application
+│   ├── app/
+│   │   ├── api/                # REST API endpoints
+│   │   ├── core/               # Configuration and auth
+│   │   ├── data/               # Database models and queries
+│   │   ├── services/           # Business logic services
+│   │   └── worker.py           # Celery task definitions
+│   ├── tests/                  # Unit tests (placeholders)
+│   ├── main.py                 # Application entry point
+│   ├── requirements.txt        # Python dependencies
+│   └── README.md               # Backend documentation
+├── worker/                     # AI models and audio utilities
+│   ├── ai_models/              # Suno API integration
+│   └── audio_utils/            # Audio processing tools
+├── docker/                     # Docker configuration
+│   ├── docker-compose.yml      # Multi-service setup
+│   ├── Dockerfile              # Backend container
+│   └── SQL/                    # Database initialization
+├── frontend/                   # Frontend (not implemented)
+│   └── src/
+│       └── main.tsx            # Placeholder
+└── docs/                       # Documentation
+    ├── README.md               # This file
+    ├── ESTRUTURA_CRIADA.md     # Project structure details
+    ├── INTEGRACAO_WORKER.md    # Worker integration guide
+    ├── OAUTH_IMPLEMENTATION.md # OAuth setup and usage
+    └── OAUTH_SETUP.md          # OAuth provider configuration
+```
 
 ## Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose
 - Python 3.11+ (for local development)
-- OAuth credentials for Google/GitHub/Microsoft (see `OAUTH_SETUP.md`)
+- OAuth credentials for Google/GitHub/Microsoft (see `docs/OAUTH_SETUP.md`)
 
 ### 1. Clone and Setup Environment
 ```bash
@@ -111,7 +92,35 @@ This starts:
 - **pgAdmin:** http://localhost:5050 (admin@example.com / admin)
 
 ### 4. Test OAuth Flow
-See `OAUTH_SETUP.md` for configuring OAuth providers and testing login flows.
+See `docs/OAUTH_SETUP.md` for configuring OAuth providers and testing login flows.
+
+## Development
+
+### Backend Development
+```bash
+cd backend/
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+### Running Tests
+```bash
+cd backend/
+pytest
+# Note: Tests are currently placeholders and need implementation
+```
+
+### Worker Tasks
+```bash
+# Start Celery worker
+cd backend/
+celery -A app.worker worker --loglevel=info
+
+# Monitor tasks (optional)
+celery -A app.worker flower
+```
 
 ## API Endpoints
 
@@ -158,16 +167,6 @@ See `OAUTH_SETUP.md` for configuring OAuth providers and testing login flows.
 ### External Services
 - **Suno AI API** - Music generation
 - **Google/GitHub/Microsoft OAuth** - Authentication providers
-
-## Documentation Files
-
-- **[ESTRUTURA_CRIADA.md](ESTRUTURA_CRIADA.md)** - Detailed project structure and architecture
-- **[INTEGRACAO_WORKER.md](INTEGRACAO_WORKER.md)** - Worker integration guide and Celery setup
-- **[OAUTH_IMPLEMENTATION.md](OAUTH_IMPLEMENTATION.md)** - OAuth implementation details and API usage
-- **[OAUTH_SETUP.md](OAUTH_SETUP.md)** - OAuth provider configuration guide
-- **[FRONTEND_STATUS.md](FRONTEND_STATUS.md)** - Frontend development plan
-- **[PROJECT_STATUS.md](../PROJECT_STATUS.md)** - Comprehensive project status overview
-- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Contribution guidelines
 
 ## Contributing
 
