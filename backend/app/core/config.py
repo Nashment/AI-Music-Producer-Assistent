@@ -45,7 +45,7 @@ class Settings:
     # Audio Processing Configuration
     AUDIO_UPLOAD_DIR: str = os.path.join(
         os.path.dirname(__file__),
-        "../../generations/audio/"
+        "../../../worker/uploads/audio"
     )
     PARTITURA_OUTPUT_DIR: str = os.path.join(
         os.path.dirname(__file__),

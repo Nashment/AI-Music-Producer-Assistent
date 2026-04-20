@@ -17,13 +17,13 @@ def extrair_instrumento(caminho_audio, instrumento_desejado, output_dir=None):
     instrumento_formatado = instrumento_desejado.lower().strip()
 
     if instrumento_formatado not in mapa_instrumentos:
-        print(f"Erro: Instrumento '{instrumento_desejado}' não suportado.")
-        print(f"Escolhe um destes: {', '.join(mapa_instrumentos.keys())}")
-        return
+        raise ValueError(
+            f"Instrumento '{instrumento_desejado}' não suportado. "
+            f"Escolhe um destes: {', '.join(mapa_instrumentos.keys())}"
+        )
 
     if not os.path.exists(caminho_audio):
-        print(f"Erro: Ficheiro '{caminho_audio}' não encontrado.")
-        return
+        raise FileNotFoundError(f"Ficheiro '{caminho_audio}' não encontrado.")
 
     nome_ficheiro_demucs = mapa_instrumentos[instrumento_formatado]
     nome_base_musica = os.path.splitext(os.path.basename(caminho_audio))[0]
@@ -31,10 +31,10 @@ def extrair_instrumento(caminho_audio, instrumento_desejado, output_dir=None):
 
     print(f"A processar '{nome_base_musica}'... A isolar a {instrumento_formatado}!")
 
-    comando = [sys.executable, "-m", "demucs", "-n", "htdemucs_6s", caminho_audio]
+    comando = [sys.executable, "-m", "demucs", "-n", "htdemucs_6s", "--device", "cpu", caminho_audio]
 
     try:
-        subprocess.run(comando, check=True, capture_output=True)
+        result = subprocess.run(comando, check=True, capture_output=True, text=True)
 
         pasta_output_demucs = os.path.join("separated", "htdemucs_6s", nome_base_musica)
         caminho_ficheiro_isolado = os.path.join(pasta_output_demucs, nome_ficheiro_demucs)
@@ -48,12 +48,13 @@ def extrair_instrumento(caminho_audio, instrumento_desejado, output_dir=None):
                 shutil.rmtree("separated")
                 print("Limpeza concluída.")
         else:
-            print("Erro: O Demucs não conseguiu gerar o ficheiro.")
+            raise RuntimeError(
+                f"O Demucs não gerou o ficheiro esperado '{nome_ficheiro_demucs}'. "
+                f"Stderr: {result.stderr[:500] if result.stderr else 'sem output'}"
+            )
 
     except subprocess.CalledProcessError as e:
-        print(f"Ocorreu um erro ao correr o Demucs: {e}")
-    except Exception as e:
-        print(f"Erro: {e}")
+        raise RuntimeError(f"Erro ao correr o Demucs: {e.stderr if e.stderr else str(e)}")
 
 
 if __name__ == "__main__":

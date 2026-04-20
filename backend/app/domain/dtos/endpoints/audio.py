@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -8,6 +8,7 @@ class AudioAnalysisResponse(BaseModel):
     """Audio analysis response schema."""
 
     id: uuid.UUID
+    project_id: uuid.UUID
     file_path: str
     duration: float
     sample_rate: int
@@ -18,3 +19,10 @@ class AudioAnalysisResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AudioListResponse(BaseModel):
+    """List of audio files response schema."""
+
+    audios: List[AudioAnalysisResponse]
+    total: int

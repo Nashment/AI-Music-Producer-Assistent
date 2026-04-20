@@ -4,6 +4,7 @@ Generation Service - Music generation orchestration and AI integration
 
 import asyncio
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 

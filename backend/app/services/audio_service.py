@@ -13,12 +13,12 @@ from backend.worker.audio_utils.audio_analyzer import analisar_audio_completo
 
 try:
     from backend.worker.audio_utils.ajuste_bpm import ajustar_bpm_automatico
-    from backend.worker.audio_utils.corte_audio import cortar_audio_para_30_segundos
+    from backend.worker.audio_utils.corte_audio import cortar_audio
     from backend.worker.audio_utils.separador_faixas import extrair_instrumento
 except ImportError as e:
     print(f"Warning: Could not import audio processing modules: {e}")
     ajustar_bpm_automatico = None
-    cortar_audio_para_30_segundos = None
+    cortar_audio = None
     extrair_instrumento = None
 
 
@@ -30,11 +30,21 @@ class AudioService:
     # Upload & análise
     # ------------------------------------------------------------------
 
+    async def get_project_audios(self, project_id: uuid.UUID, user_id: str):
+        """Lista todos os áudios de um projeto, verificando autorização."""
+        from backend.app.data import ProjectQueries
+        project = await ProjectQueries.get_project(db=self.db, project_id=project_id)
+        if not project:
+            raise ValueError("Projeto não encontrado.")
+        if str(project.user_id) != user_id:
+            raise PermissionError("Acesso negado.")
+        return await AudioQueries.get_project_audio_files(db=self.db, project_id=project_id)
+
     async def upload_and_analyze_audio(
         self,
         file_path: str,
         user_id: str,
-        project_id: Optional[str] = None
+        project_id: str
     ):
         valid_extensions = {'.mp3', '.wav'}
         _, ext = os.path.splitext(file_path.lower())
@@ -53,7 +63,7 @@ class AudioService:
             analysis_result = analisar_audio_completo(file_path)
 
             user_uuid = uuid.UUID(user_id)
-            project_uuid = uuid.UUID(project_id) if project_id else None
+            project_uuid = uuid.UUID(project_id)
 
             duration = analysis_result.get("duration", 0.0)
             sample_rate = analysis_result.get("sample_rate", 44100)
@@ -140,21 +150,34 @@ class AudioService:
             raise
 
     async def cut_audio_file(
-        self, audio_id: uuid.UUID, user_id: str, duration_seconds: int, upload_dir: str
+        self, audio_id: uuid.UUID, user_id: str, inicio_segundos: float, fim_segundos: float, upload_dir: str
     ):
-        """Corta o áudio e guarda como novo registo ligado ao original."""
-        if not cortar_audio_para_30_segundos:
+        """Corta o áudio entre inicio_segundos e fim_segundos e guarda como novo registo ligado ao original."""
+        if not cortar_audio:
             raise NotImplementedError("Audio cutting not available")
+
+        if inicio_segundos < 0:
+            raise ValueError("O tempo de início não pode ser negativo.")
+        if fim_segundos <= inicio_segundos:
+            raise ValueError("O tempo de fim deve ser maior que o tempo de início.")
 
         record = await self.get_audio(audio_id, user_id)
         input_path = Path(record.file_path)
         if not input_path.exists():
             raise FileNotFoundError("Ficheiro de áudio não encontrado no disco.")
 
-        output_filename = f"{uuid.uuid4()}_cut_{duration_seconds}s.wav"
+        original_duration = record.duration or 0.0
+        if inicio_segundos >= original_duration:
+            raise ValueError(
+                f"O tempo de início ({inicio_segundos}s) é maior ou igual à duração do áudio ({original_duration:.2f}s)."
+            )
+        actual_end = min(fim_segundos, original_duration)
+        actual_duration = actual_end - inicio_segundos
+
+        output_filename = f"{uuid.uuid4()}_cut_{inicio_segundos}s_{actual_end}s.wav"
         output_path = Path(upload_dir) / output_filename
         try:
-            cortar_audio_para_30_segundos(str(input_path), str(output_path), duration_seconds)
+            cortar_audio(str(input_path), str(output_path), inicio_segundos, actual_end)
             file_size = output_path.stat().st_size
             new_record = await AudioQueries.create_audio_file(
                 db=self.db,
@@ -162,7 +185,7 @@ class AudioService:
                 project_id=record.project_id,
                 file_path=str(output_path),
                 file_size=file_size,
-                duration=float(duration_seconds),
+                duration=round(actual_duration, 3),
                 sample_rate=record.sample_rate,
                 bpm=record.bpm,
                 key=record.key,
@@ -188,7 +211,8 @@ class AudioService:
             raise FileNotFoundError("Ficheiro de áudio não encontrado no disco.")
 
         base_name = input_path.stem
-        output_filename = f"{base_name}_{instrument}.wav"
+        instrument_normalized = instrument.lower().strip()
+        output_filename = f"{base_name}_{instrument_normalized}.wav"
         output_path = Path(upload_dir) / output_filename
 
         extrair_instrumento(str(input_path), instrument, upload_dir)

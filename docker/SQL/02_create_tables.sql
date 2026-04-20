@@ -1,4 +1,12 @@
 -- ==========================================
+-- DROP EXISTING TABLES (if they exist)
+-- ==========================================
+DROP TABLE IF EXISTS generations CASCADE;
+DROP TABLE IF EXISTS audio_files CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- ==========================================
 -- CREATE APPLICATION TABLES (Privacy-First)
 -- ==========================================
 

@@ -1,6 +1,6 @@
 import os
+import shutil
 import uuid
-from typing import Optional
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
@@ -9,17 +9,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services import AudioService
 from backend.app.api.dependencies import get_db, get_current_user_id
-from backend.app.domain.dtos.endpoints.audio import AudioAnalysisResponse
+from backend.app.domain.dtos.endpoints.audio import AudioAnalysisResponse, AudioListResponse
 
 router = APIRouter()
 
-UPLOAD_DIR = Path(os.getenv("AUDIO_UPLOAD_DIR", "worker/uploads/audio"))
+_DEFAULT_UPLOAD_DIR = Path(__file__).resolve().parents[3] / "worker" / "uploads" / "audio"
+UPLOAD_DIR = Path(os.getenv("AUDIO_UPLOAD_DIR", str(_DEFAULT_UPLOAD_DIR)))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@router.post("/upload", response_model=AudioAnalysisResponse, status_code=status.HTTP_201_CREATED)
+@router.get("/project/{project_id}", response_model=AudioListResponse)
+async def list_project_audios(
+        project_id: uuid.UUID,
+        db: AsyncSession = Depends(get_db),
+        user_id: str = Depends(get_current_user_id)
+):
+    """List all audio files belonging to a project"""
+    try:
+        audios = await AudioService(db).get_project_audios(project_id, user_id)
+        return AudioListResponse(audios=audios, total=len(audios))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+@router.post("/project/{project_id}/upload", response_model=AudioAnalysisResponse, status_code=status.HTTP_201_CREATED)
 async def upload_audio(
-        project_id: Optional[str] = None,
+        project_id: str,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(get_db),
         user_id: str = Depends(get_current_user_id)
@@ -149,13 +166,14 @@ async def adjust_audio_bpm(
 @router.post("/{audio_id}/cut", response_model=AudioAnalysisResponse, status_code=status.HTTP_201_CREATED)
 async def cut_audio(
     audio_id: uuid.UUID,
-    duration_seconds: int = 30,
+    inicio_segundos: float = 0.0,
+    fim_segundos: float = 30.0,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    """Cut audio to specified duration and save as new record linked to original"""
+    """Cut audio between inicio_segundos and fim_segundos and save as new record linked to original"""
     try:
-        return await AudioService(db).cut_audio_file(audio_id, user_id, duration_seconds, str(UPLOAD_DIR))
+        return await AudioService(db).cut_audio_file(audio_id, user_id, inicio_segundos, fim_segundos, str(UPLOAD_DIR))
     except NotImplementedError as e:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
     except (ValueError, FileNotFoundError) as e:

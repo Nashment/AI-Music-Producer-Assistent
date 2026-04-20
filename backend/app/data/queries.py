@@ -144,7 +144,7 @@ class AudioQueries:
     async def create_audio_file(
         db: AsyncSession,
         user_id: uuid.UUID,
-        project_id: Optional[uuid.UUID],
+        project_id: uuid.UUID,
         file_path: str,
         file_size: int,
         duration: float,
