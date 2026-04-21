@@ -8,7 +8,7 @@ import jwt
 import os
 from enum import Enum
 
-from backend.app.core.config import settings
+from app.core.config import settings
 
 
 class OAuthProvider(str, Enum):
@@ -249,8 +249,8 @@ class AuthService:
         Returns:
             User object
         """
-        from backend.app.data.oauth_queries import OAuthQueries
-        from backend.app.data.models import OAuthProvider as ModelOAuthProvider
+        from app.data.oauth_queries import OAuthQueries
+        from app.data.models import OAuthProvider as ModelOAuthProvider
 
         model_provider = ModelOAuthProvider(provider.value)
         user = await OAuthQueries.get_or_create_user(

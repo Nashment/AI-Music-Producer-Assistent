@@ -43,27 +43,26 @@ services:
   # Backend API
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..             # Alterado: aponta para a raiz do projeto (AI-Music-Producer-Assistent)
+      dockerfile: docker/Dockerfile # Indica onde está o Dockerfile a partir da raiz
     container_name: music_ai_backend
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
-      DEBUG: ${DEBUG:-True}
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
+      # ... resto do config ...
+    volumes:
+      - ../backend:/app       # Alterado: Mapeia a pasta backend para o /app do container
+      - ../generations:/app/generations
+    # Alterado: Como o main.py está agora diretamente em /app, o comando mantém-se:
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    networks:
+      - music_ai_network
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
-      - ./generations:/app/generations
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    networks:
-      - music_ai_network
 
   # Optional: pgAdmin for database management
   pgadmin:

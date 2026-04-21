@@ -10,9 +10,9 @@ from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.dependencies import get_db, get_current_user_id
-from backend.app.services.generation_service import GenerationService
-from backend.app.domain.dtos.endpoints.generation import (
+from app.api.dependencies import get_db, get_current_user_id
+from app.services.generation_service import GenerationService
+from app.domain.dtos.endpoints.generation import (
     GenerationRequest,
     GenerationResponse,
     GenerationResult,

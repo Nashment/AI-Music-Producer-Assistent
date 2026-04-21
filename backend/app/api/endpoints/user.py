@@ -6,10 +6,10 @@ import uuid
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.auth import AuthService
-from backend.app.data import UserQueries
-from backend.app.api.dependencies import get_db, get_current_user_id
-from backend.app.domain.dtos.endpoints.user import (
+from app.core.auth import AuthService
+from app.data import UserQueries
+from app.api.dependencies import get_db, get_current_user_id
+from app.domain.dtos.endpoints.user import (
     OAuthCallbackRequest,
     OAuthStartResponse,
     TokenResponse,

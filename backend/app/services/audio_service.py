@@ -8,13 +8,13 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from backend.app.data import AudioQueries
-from backend.worker.audio_utils.audio_analyzer import analisar_audio_completo
+from app.data import AudioQueries
+from worker.audio_utils.audio_analyzer import analisar_audio_completo
 
 try:
-    from backend.worker.audio_utils.ajuste_bpm import ajustar_bpm_automatico
-    from backend.worker.audio_utils.corte_audio import cortar_audio
-    from backend.worker.audio_utils.separador_faixas import extrair_instrumento
+    from worker.audio_utils.ajuste_bpm import ajustar_bpm_automatico
+    from worker.audio_utils.corte_audio import cortar_audio
+    from worker.audio_utils.separador_faixas import extrair_instrumento
 except ImportError as e:
     print(f"Warning: Could not import audio processing modules: {e}")
     ajustar_bpm_automatico = None
@@ -32,7 +32,7 @@ class AudioService:
 
     async def get_project_audios(self, project_id: uuid.UUID, user_id: str):
         """Lista todos os áudios de um projeto, verificando autorização."""
-        from backend.app.data import ProjectQueries
+        from app.data import ProjectQueries
         project = await ProjectQueries.get_project(db=self.db, project_id=project_id)
         if not project:
             raise ValueError("Projeto não encontrado.")

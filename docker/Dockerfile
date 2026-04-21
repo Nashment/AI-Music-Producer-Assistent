@@ -7,16 +7,20 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
     libpq-dev \
+    ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
+# Copy and install dependencies first (melhor cache)
+COPY docker/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
-COPY . .
+# Copy backend application
+COPY backend/ /app/
+
+# Criar utilizador não-root
+RUN useradd -m appuser
+USER appuser
 
 # Expose port
 EXPOSE 8000

@@ -7,9 +7,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services import AudioService
-from backend.app.api.dependencies import get_db, get_current_user_id
-from backend.app.domain.dtos.endpoints.audio import AudioAnalysisResponse, AudioListResponse
+from app.services import AudioService
+from app.api.dependencies import get_db, get_current_user_id
+from app.domain.dtos.endpoints.audio import AudioAnalysisResponse, AudioListResponse
 
 router = APIRouter()
 

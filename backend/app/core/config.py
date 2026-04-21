@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 # Carregar .env da pasta backend
 env_path = Path(__file__).parent.parent.parent / ".env"
-load_dotenv(dotenv_path=env_path, override=True)
+load_dotenv(dotenv_path=env_path, override=False)
 
 
 class Settings:

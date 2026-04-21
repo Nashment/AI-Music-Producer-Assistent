@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from backend.app.core.config import settings
+from app.core.config import settings
 
 
 class Database:
@@ -47,14 +47,14 @@ class Database:
 
     async def init_db(self):
         """Initialize database tables"""
-        from backend.app.data.models import Base
+        from app.data.models import Base
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        print("✓ Database tables initialized")
+        print("Database tables initialized")
 
-    def close_db(self):
+    async def close_db(self):
         """Close database connection"""
-        self.engine.dispose()
+        await self.engine.dispose()
 
     async def health_check(self) -> bool:
         """Check database connection health"""

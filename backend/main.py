@@ -2,11 +2,20 @@
 FastAPI Application Factory
 """
 
+import sys
+from pathlib import Path
+
+# Ensure `app` package is importable when running from project root
+# (e.g. `uvicorn backend.main:app --reload`).
+backend_dir = Path(__file__).resolve().parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.core.config import settings
-from backend.app.api.router import router
-from backend.app.data.database import db
+from app.core.config import settings
+from app.api.router import router
+from app.data.database import db
 
 
 def create_app() -> FastAPI:
@@ -42,9 +51,9 @@ def create_app() -> FastAPI:
         await db.init_db()
         health = await db.health_check()
         if health:
-            print("✓ Database connection established")
+            print("Database connection established")
         else:
-            print("✗ Database connection failed")
+            print("Database connection failed")
 
     @app.on_event("shutdown")
     async def shutdown_event():

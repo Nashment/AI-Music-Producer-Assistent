@@ -8,18 +8,18 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from backend.app.data import AudioQueries, GenerationQueries
-from backend.app.data.models import GenerationStatusEnum
+from app.data import AudioQueries, GenerationQueries
+from app.data.models import GenerationStatusEnum
 
 try:
-    from backend.worker.ai_models.suno_audio_generator import (
+    from worker.ai_models.suno_audio_generator import (
         iniciar_geracao, verificar_estado, guardar_ficheiro
     )
-    from backend.worker.audio_utils.audio_to_tablature import (
+    from worker.audio_utils.audio_to_tablature import (
         extrair_midi_do_audio, converter_midi_para_ly,
         forcar_tablatura_no_ly, compilar_pdf_lilypond
     )
-    from backend.worker.audio_utils.audio_to_partitura import exportar_pdf_automatico
+    from worker.audio_utils.audio_to_partitura import exportar_pdf_automatico
 except ImportError as e:
     print(f"Warning: Could not import worker modules: {e}")
     iniciar_geracao = None
@@ -104,7 +104,7 @@ class GenerationService:
         Faz polling ao Suno até a geração estar pronta, descarrega o áudio
         e gera partitura + tablatura. Corre como BackgroundTask.
         """
-        from backend.app.data.database import db as db_manager
+        from app.data.database import db as db_manager
 
         db = db_manager.get_session()
         try:

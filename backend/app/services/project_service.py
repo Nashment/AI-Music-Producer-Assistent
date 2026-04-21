@@ -5,7 +5,7 @@ Project Service - Project management business logic
 import uuid
 from typing import List, Optional
 # Importamos as Queries necessárias (assume-se que estão no teu __init__.py de data)
-from backend.app.data import ProjectQueries, GenerationQueries
+from app.data import ProjectQueries, GenerationQueries
 
 
 class ProjectService:

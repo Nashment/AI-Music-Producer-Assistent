@@ -8,9 +8,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt  # Precisas de instalar: pip install pyjwt
 
 
-from backend.app.core.config import settings
+from app.core.config import settings
 
-from backend.app.data.database import db as db_manager
+from app.data.database import db as db_manager
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

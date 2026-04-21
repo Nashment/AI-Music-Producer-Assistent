@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services.project_service import ProjectService
-from backend.app.api.dependencies import get_db, get_current_user_id
-from backend.app.domain.dtos.endpoints.projects import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.services.project_service import ProjectService
+from app.api.dependencies import get_db, get_current_user_id
+from app.domain.dtos.endpoints.projects import ProjectCreate, ProjectResponse, ProjectUpdate
 
 router = APIRouter()
 
