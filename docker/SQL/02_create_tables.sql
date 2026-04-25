@@ -44,7 +44,8 @@ CREATE TABLE projects (
     description TEXT,
     tempo INTEGER,  -- BPM
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT uq_projects_user_title UNIQUE (user_id, title)
 );
 
 CREATE TRIGGER update_projects_timestamp

@@ -33,6 +33,8 @@ demucs==4.0.1
 # MIDI Processing
 music21==8.1.0
 mido==1.3.0
+pretty_midi==0.2.11
+basic-pitch==0.4.0
 
 # Async Tasks
 celery==5.3.4

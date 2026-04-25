@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     ffmpeg \
     libsndfile1 \
+    lilypond \
+    musescore3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install dependencies first (melhor cache)

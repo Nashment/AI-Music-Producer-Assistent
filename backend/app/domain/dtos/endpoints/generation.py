@@ -29,9 +29,22 @@ class GenerationRequest(BaseModel):
     audio_id: uuid.UUID
     prompt: str
     instrument: InstrumentType
-    genre: MusicGenreType
-    duration: int
+    genre: Optional[MusicGenreType] = None
+    duration: Optional[int] = None
     tempo_override: Optional[int] = None
+
+
+class CoverGenerationRequest(BaseModel):
+    """Cover generation request (audio reference + style prompt)."""
+    project_id: uuid.UUID
+    audio_id: uuid.UUID
+    prompt: str
+    instrument: InstrumentType
+    genre: Optional[MusicGenreType] = None
+    duration: Optional[int] = None
+    tempo_override: Optional[int] = None
+    upload_url: Optional[str] = None
+    audio_weight: float = 0.7
 
 
 class GenerationResponse(BaseModel):

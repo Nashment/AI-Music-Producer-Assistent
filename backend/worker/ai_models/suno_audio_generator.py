@@ -1,18 +1,25 @@
 import os
-import requests
+from pathlib import Path
 
-API_KEY = os.getenv("SUNO_API_KEY", "fbcf463a0aa472ce3f6e11c45a5434c1")
+import requests
+from dotenv import load_dotenv
+
+# Load backend/.env when this module is used standalone.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+
+API_KEY = os.getenv("SUNO_API_KEY")
 BASE_URL = "https://api.sunoapi.org"
 
-headers = {
-    "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json"
-}
+headers = {"Content-Type": "application/json"}
 
 
-def iniciar_geracao(style_prompt: str, title: str = "Generated Music", instrumental: bool = True, model: str = "V5") -> str | None:
+def iniciar_geracao(style_prompt: str, title: str = "Generated Music", instrumental: bool = True, model: str = "V5_5") -> str | None:
     """Submete um pedido de geração ao Suno e devolve o taskId, ou None em caso de erro."""
+    if not API_KEY:
+        raise RuntimeError("SUNO_API_KEY não está definida. Configure no backend/.env")
+
     url = f"{BASE_URL}/api/v1/generate"
+    request_headers = {**headers, "Authorization": f"Bearer {API_KEY}"}
     payload = {
         "customMode": True,
         "instrumental": instrumental,
@@ -23,7 +30,7 @@ def iniciar_geracao(style_prompt: str, title: str = "Generated Music", instrumen
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = requests.post(url, headers=request_headers, json=payload, timeout=30)
         if response.status_code == 200:
             res = response.json()
             if res.get("code") == 200:
@@ -34,11 +41,54 @@ def iniciar_geracao(style_prompt: str, title: str = "Generated Music", instrumen
     return None
 
 
-def verificar_estado(task_id: str) -> dict | None:
-    """Consulta o estado de uma tarefa Suno. Devolve o JSON da resposta ou None."""
-    url = f"{BASE_URL}/api/v1/get_music_details?taskId={task_id}"
+def iniciar_cover(
+    upload_url: str,
+    style_prompt: str,
+    title: str = "Generated Cover",
+    instrumental: bool = True,
+    model: str = "V5_5",
+    audio_weight: float = 0.7,
+) -> str | None:
+    """Submete um pedido de cover ao Suno e devolve o taskId, ou None em caso de erro."""
+    if not API_KEY:
+        raise RuntimeError("SUNO_API_KEY não está definida. Configure no backend/.env")
+
+    if not upload_url or not upload_url.startswith(("http://", "https://")):
+        raise ValueError("upload_url inválido. Deve ser uma URL pública http(s).")
+
+    url = f"{BASE_URL}/api/v1/generate/upload-cover"
+    request_headers = {**headers, "Authorization": f"Bearer {API_KEY}"}
+    payload = {
+        "customMode": True,
+        "instrumental": instrumental,
+        "model": model,
+        "style": style_prompt,
+        "title": title,
+        "uploadUrl": upload_url,
+        "audioWeight": audio_weight,
+        "callBackUrl": "https://webhook.site/vazio",
+    }
+
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.post(url, headers=request_headers, json=payload, timeout=30)
+        if response.status_code == 200:
+            res = response.json()
+            if res.get("code") == 200:
+                return res["data"]["taskId"]
+        print("Erro ao iniciar cover:", response.text)
+    except Exception as e:
+        print(f"Erro de rede ao iniciar cover: {e}")
+    return None
+
+
+def verificar_estado(task_id: str) -> dict | None:
+    if not API_KEY:
+        raise RuntimeError("SUNO_API_KEY não está definida. Configure no backend/.env")
+
+    url = f"{BASE_URL}/api/v1/generate/record-info?taskId={task_id}"
+    request_headers = {**headers, "Authorization": f"Bearer {API_KEY}"}
+    try:
+        response = requests.get(url, headers=request_headers, timeout=30)
         if response.status_code == 200:
             return response.json()
     except Exception as e:

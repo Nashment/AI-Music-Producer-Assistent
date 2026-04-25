@@ -46,9 +46,14 @@ services:
       context: ..             # Alterado: aponta para a raiz do projeto (AI-Music-Producer-Assistent)
       dockerfile: docker/Dockerfile # Indica onde está o Dockerfile a partir da raiz
     container_name: music_ai_backend
+    env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
-      # ... resto do config ...
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GENERATIONS_AUDIO_DIR: /app/worker/generations/audio
+      GENERATIONS_PARTITURA_DIR: /app/worker/generations/partitura
+      GENERATIONS_TABLATURA_DIR: /app/worker/generations/tablatura
     volumes:
       - ../backend:/app       # Alterado: Mapeia a pasta backend para o /app do container
       - ../generations:/app/generations
@@ -63,6 +68,32 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  celery_worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GENERATIONS_AUDIO_DIR: /app/worker/generations/audio
+      GENERATIONS_PARTITURA_DIR: /app/worker/generations/partitura
+      GENERATIONS_TABLATURA_DIR: /app/worker/generations/tablatura
+    volumes:
+      - ../backend:/app
+      - ../generations:/app/generations
+    command: celery -A worker.celery_app:celery_app worker --pool=solo --loglevel=info
+    networks:
+      - music_ai_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 4
 
   # Optional: pgAdmin for database management
   pgadmin:

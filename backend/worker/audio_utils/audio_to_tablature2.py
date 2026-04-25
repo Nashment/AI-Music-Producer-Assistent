@@ -2,11 +2,20 @@ import os
 import subprocess
 import re
 import math
-from basic_pitch.inference import predict
-import pretty_midi  # O basic_pitch usa isto por trás, ajuda a ler as notas!
+import sys
+import importlib
 
-CAMINHO_MIDI2LY = r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\midi2ly.py"
-CAMINHO_LILYPOND = r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\lilypond.exe"
+if os.name == "nt":
+    _DEFAULT_MIDI2LY = r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\midi2ly.py"
+    _DEFAULT_LILYPOND = r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\lilypond.exe"
+else:
+    _DEFAULT_MIDI2LY = "/usr/bin/midi2ly"
+    _DEFAULT_LILYPOND = "/usr/bin/lilypond"
+
+CAMINHO_MIDI2LY = os.getenv("MIDI2LY_PATH", _DEFAULT_MIDI2LY)
+CAMINHO_LILYPOND = os.getenv("LILYPOND_PATH", _DEFAULT_LILYPOND)
+ULTIMO_ERRO_EXTRACAO = None
+ULTIMO_ERRO_COMPILACAO = None
 
 AFINACAO_GUITARRA = {1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40}
 MAX_TRASTES = 22
@@ -97,16 +106,33 @@ def otimizar_tablatura(sequencia_notas_midi):
 
 
 def extrair_midi_do_audio(ficheiro_audio, ficheiro_midi):
+    global ULTIMO_ERRO_EXTRACAO
+    ULTIMO_ERRO_EXTRACAO = None
     print("Passo 1: A extrair MIDI do Áudio...")
     try:
+        inference_module = importlib.import_module("basic_pitch.inference")
+        predict = getattr(inference_module, "predict")
         model_output, midi_data, note_events = predict(
             ficheiro_audio, onset_threshold=0.6, frame_threshold=0.4, minimum_note_length=58
         )
         midi_data.write(ficheiro_midi)
         return True, midi_data  # Devolvemos o midi_data para o algoritmo ler!
+    except ModuleNotFoundError:
+        ULTIMO_ERRO_EXTRACAO = "Dependência 'basic_pitch' não instalada no ambiente Python."
+        print(f"ERRO: {ULTIMO_ERRO_EXTRACAO}")
+        return False, None, ULTIMO_ERRO_EXTRACAO
     except Exception as e:
-        print(f"ERRO: {e}")
-        return False, None
+        ULTIMO_ERRO_EXTRACAO = str(e)
+        print(f"ERRO: {ULTIMO_ERRO_EXTRACAO}")
+        return False, None, ULTIMO_ERRO_EXTRACAO
+
+
+def obter_ultimo_erro_extracao():
+    return ULTIMO_ERRO_EXTRACAO
+
+
+def obter_ultimo_erro_compilacao():
+    return ULTIMO_ERRO_COMPILACAO
 
 
 def extrair_lista_notas(midi_data):
@@ -123,13 +149,19 @@ def extrair_lista_notas(midi_data):
 
 def converter_midi_para_ly(caminho_midi, caminho_ly):
     print("Passo 2: Converter MIDI para LilyPond...")
-    comando = ["python", CAMINHO_MIDI2LY, "-o", caminho_ly, caminho_midi]
+    if not os.path.exists(CAMINHO_MIDI2LY):
+        print(f"ERRO: midi2ly não encontrado em: {CAMINHO_MIDI2LY}")
+        return False
+
+    comando = [sys.executable, CAMINHO_MIDI2LY, "-o", caminho_ly, caminho_midi]
     subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return True
 
 
 def injetar_inteligencia_no_ly(caminho_ly, dedilhado_otimizado):
     print("Passo 3/4 - A injetar a inteligência do dedilhado na Tablatura...")
+    if dedilhado_otimizado is None:
+        dedilhado_otimizado = []
 
     try:
         with open(caminho_ly, 'r', encoding='utf-8') as f:
@@ -179,11 +211,50 @@ def injetar_inteligencia_no_ly(caminho_ly, dedilhado_otimizado):
         return False
 
 
+def forcar_tablatura_no_ly(caminho_ly):
+    """Converte o .ly para TabStaff sem dedilhado otimizado."""
+    print("Passo 3/4 - A converter para tablatura padrão...")
+
+    try:
+        with open(caminho_ly, 'r', encoding='utf-8') as f:
+            conteudo = f.read()
+
+        conteudo = re.sub(r'\\clef\s+"?[a-zA-Z_]+"?', '', conteudo)
+        conteudo = re.sub(r'\\new\s+Staff', r'\\new TabStaff \\with { \\clef "moderntab" }', conteudo)
+        conteudo = re.sub(r'\\context\s+Staff', r'\\context TabStaff', conteudo)
+        conteudo = re.sub(r'\\context\s+Voice', r'\\context TabVoice', conteudo)
+
+        with open(caminho_ly, 'w', encoding='utf-8') as f:
+            f.write(conteudo)
+
+        return True
+    except Exception as e:
+        print(f"ERRO ao converter .ly para tablatura padrão: {e}")
+        return False
+
+
 def compilar_pdf_lilypond(caminho_ly):
+    global ULTIMO_ERRO_COMPILACAO
+    ULTIMO_ERRO_COMPILACAO = None
     print("Passo 4: A desenhar o PDF final...")
-    comando = [CAMINHO_LILYPOND, caminho_ly]
-    subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return True
+    if not os.path.exists(CAMINHO_LILYPOND):
+        ULTIMO_ERRO_COMPILACAO = f"LilyPond não encontrado em: {CAMINHO_LILYPOND}"
+        print(f"ERRO: {ULTIMO_ERRO_COMPILACAO}")
+        return False
+
+    output_prefix = str(os.path.splitext(caminho_ly)[0])
+    comando = [CAMINHO_LILYPOND, "--output", output_prefix, caminho_ly]
+    try:
+        subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        ULTIMO_ERRO_COMPILACAO = (e.stderr or str(e)).strip()
+        print(f"ERRO LilyPond: {ULTIMO_ERRO_COMPILACAO}")
+        return False
+    except Exception as e:
+        ULTIMO_ERRO_COMPILACAO = str(e)
+        print(f"ERRO LilyPond: {ULTIMO_ERRO_COMPILACAO}")
+        return False
 
 
 if __name__ == "__main__":

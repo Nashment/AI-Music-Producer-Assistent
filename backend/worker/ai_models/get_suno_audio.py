@@ -1,20 +1,27 @@
 import requests
 import os
+from pathlib import Path
 
-API_KEY = "fbcf463a0aa472ce3f6e11c45a5434c1"
+from dotenv import load_dotenv
+
+# Load backend/.env when this script runs directly.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+
+API_KEY = os.getenv("SUNO_API_KEY")
 BASE_URL = "https://api.sunoapi.org"
 TASK_ID = "f46e6b34d0939a057aeb379afa2cac6c"
 
-headers = {
-    "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json"
-}
+headers = {"Content-Type": "application/json"}
 
 
 def consultar_detalhes_oficiais(task_id):
+    if not API_KEY:
+        raise RuntimeError("SUNO_API_KEY não está definida. Configure no backend/.env")
+
     url = f"{BASE_URL}/api/v1/generate/record-info?taskId={task_id}"
+    request_headers = {**headers, "Authorization": f"Bearer {API_KEY}"}
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=request_headers)
         if response.status_code == 200:
             return response.json()
         else:

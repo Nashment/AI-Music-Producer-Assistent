@@ -29,6 +29,11 @@ class ProjectService:
         if not clean_title:
             raise ValueError("O título do projeto não pode estar vazio.")
 
+            # Verificar nome duplicado para este utilizador
+            existing = await ProjectQueries.get_user_projects(db=self.db, user_id=uuid.UUID(user_id))
+            if any(p.title.strip().lower() == clean_title.lower() for p in existing):
+                raise ValueError(f"Já tens um projeto com o nome '{clean_title}'.")
+
         try:
             projeto = await ProjectQueries.create_project(
                 db=self.db,

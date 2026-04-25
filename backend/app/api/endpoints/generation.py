@@ -6,7 +6,7 @@ import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,15 +14,21 @@ from app.api.dependencies import get_db, get_current_user_id
 from app.services.generation_service import GenerationService
 from app.domain.dtos.endpoints.generation import (
     GenerationRequest,
+    CoverGenerationRequest,
     GenerationResponse,
     GenerationResult,
 )
 
 router = APIRouter()
 
-AUDIO_OUTPUT_DIR = Path(os.getenv("GENERATIONS_AUDIO_DIR", "worker/generations/audio"))
-PARTITURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_PARTITURA_DIR", "worker/generations/partitura"))
-TABLATURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_TABLATURA_DIR", "worker/generations/tablatura"))
+_DEFAULT_GENERATIONS_ROOT = Path(__file__).resolve().parents[3] / "worker" / "generations"
+AUDIO_OUTPUT_DIR = Path(os.getenv("GENERATIONS_AUDIO_DIR", str(_DEFAULT_GENERATIONS_ROOT / "audio")))
+PARTITURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_PARTITURA_DIR", str(_DEFAULT_GENERATIONS_ROOT / "partitura")))
+TABLATURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_TABLATURA_DIR", str(_DEFAULT_GENERATIONS_ROOT / "tablatura")))
+
+AUDIO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==========================================
@@ -80,7 +86,6 @@ async def generate_partitura_from_audio(
 @router.post("", response_model=GenerationResponse, status_code=status.HTTP_202_ACCEPTED)
 async def generate_music(
     request: GenerationRequest,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -90,23 +95,15 @@ async def generate_music(
     """
     try:
         service = GenerationService(db)
-        generation, task_id, audio_dir, partitura_dir, tablatura_dir = await service.submit_generation(
+        generation, _celery_task_id = await service.submit_generation(
             user_id=user_id,
             project_id=request.project_id,
             audio_id=request.audio_id,
             prompt=request.prompt,
             instrument=request.instrument.value,
-            genre=request.genre.value,
+            genre=request.genre.value if request.genre else None,
             duration=request.duration,
             tempo_override=request.tempo_override,
-            audio_output_dir=str(AUDIO_OUTPUT_DIR),
-            partitura_output_dir=str(PARTITURA_OUTPUT_DIR),
-            tablatura_output_dir=str(TABLATURA_OUTPUT_DIR),
-        )
-
-        background_tasks.add_task(
-            GenerationService.poll_and_complete,
-            task_id, audio_dir, partitura_dir, tablatura_dir
         )
 
         return generation
@@ -119,6 +116,40 @@ async def generate_music(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Falha ao submeter geração: {str(e)}")
+
+
+@router.post("/cover", response_model=GenerationResponse, status_code=status.HTTP_202_ACCEPTED)
+async def generate_cover(
+    request: CoverGenerationRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Submit an AI cover generation request using a source audio URL + style prompt."""
+    try:
+        service = GenerationService(db)
+        generation, _celery_task_id = await service.submit_cover_generation(
+            user_id=user_id,
+            project_id=request.project_id,
+            audio_id=request.audio_id,
+            prompt=request.prompt,
+            instrument=request.instrument.value,
+            genre=request.genre.value if request.genre else None,
+            duration=request.duration,
+            tempo_override=request.tempo_override,
+            upload_url=request.upload_url,
+            audio_weight=request.audio_weight,
+        )
+
+        return generation
+
+    except NotImplementedError as e:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Falha ao submeter cover: {str(e)}")
 
 
 @router.get("/{generation_id}/status", response_model=GenerationResult)

@@ -58,6 +58,7 @@ class User(Base):
 class Project(Base):
     """Music project model"""
     __tablename__ = "projects"
+    __table_args__ = (UniqueConstraint("user_id", "title", name="uq_projects_user_title"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # ondelete="CASCADE" diz à base de dados para apagar os projetos se o utilizador for apagado
