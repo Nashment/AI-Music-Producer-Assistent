@@ -39,7 +39,7 @@ TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 async def generate_tablature_from_audio(
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Generate tablature PDF from an existing audio file"""
     try:
@@ -61,7 +61,7 @@ async def generate_tablature_from_audio(
 async def generate_partitura_from_audio(
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Generate musical score PDF from an existing audio file"""
     try:
@@ -87,7 +87,7 @@ async def generate_partitura_from_audio(
 async def generate_music(
     request: GenerationRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Submit an AI music generation request.
@@ -122,7 +122,7 @@ async def generate_music(
 async def generate_cover(
     request: CoverGenerationRequest,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Submit an AI cover generation request using a source audio URL + style prompt."""
     try:
@@ -156,7 +156,7 @@ async def generate_cover(
 async def get_generation_status(
     generation_id: str,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Get the current status of a generation task."""
     try:
@@ -171,7 +171,7 @@ async def get_generation_status(
 async def get_generation_result(
     generation_id: str,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Get the full result of a completed generation task."""
     try:
@@ -186,7 +186,7 @@ async def get_generation_result(
 async def delete_generation(
     generation_id: str,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Delete a generation and its associated files."""
     try:

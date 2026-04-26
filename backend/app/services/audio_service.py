@@ -62,7 +62,7 @@ class AudioService:
         try:
             analysis_result = analisar_audio_completo(file_path)
 
-            user_uuid = uuid.UUID(user_id)
+            user_uuid = user_id
             project_uuid = uuid.UUID(project_id)
 
             duration = analysis_result.get("duration", 0.0)
@@ -181,7 +181,7 @@ class AudioService:
             file_size = output_path.stat().st_size
             new_record = await AudioQueries.create_audio_file(
                 db=self.db,
-                user_id=uuid.UUID(user_id),
+                user_id=user_id,
                 project_id=record.project_id,
                 file_path=str(output_path),
                 file_size=file_size,

@@ -10,7 +10,6 @@ from .generation import (
 )
 from .projects import ProjectCreate, ProjectResponse, ProjectUpdate
 from .user import (
-    OAuthCallbackRequest,
     OAuthStartResponse,
     TokenResponse,
     UserResponse,
@@ -27,7 +26,6 @@ __all__ = [
     "ProjectCreate",
     "ProjectResponse",
     "ProjectUpdate",
-    "OAuthCallbackRequest",
     "OAuthStartResponse",
     "TokenResponse",
     "UserResponse",

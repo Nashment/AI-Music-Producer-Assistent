@@ -80,7 +80,7 @@ class GenerationService:
         generation = await GenerationQueries.create_generation(
             db=self.db,
             generation_id=generation_id,
-            user_id=uuid.UUID(user_id),
+            user_id=user_id,
             project_id=project_id,
             audio_file_id=audio_id,
             prompt=prompt,
@@ -136,7 +136,7 @@ class GenerationService:
         generation = await GenerationQueries.create_generation(
             db=self.db,
             generation_id=generation_id,
-            user_id=uuid.UUID(user_id),
+            user_id=user_id,
             project_id=project_id,
             audio_file_id=audio_id,
             prompt=prompt,

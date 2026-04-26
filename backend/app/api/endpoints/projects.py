@@ -18,7 +18,7 @@ router = APIRouter()
 async def create_project(
     project_data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Create a new music project
@@ -42,7 +42,7 @@ async def create_project(
 @router.get("", response_model=List[ProjectResponse])
 async def list_user_projects(
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Get all projects for authenticated user
@@ -59,7 +59,7 @@ async def list_user_projects(
 async def get_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Get specific project by ID
@@ -82,7 +82,7 @@ async def update_project(
     project_id: str,
     project_update: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Update project information"""
     service = ProjectService(db)
@@ -99,7 +99,7 @@ async def update_project(
 async def delete_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Delete a project"""
     service = ProjectService(db)

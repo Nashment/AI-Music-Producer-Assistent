@@ -38,7 +38,7 @@ class User(Base):
     username = Column(String(128), unique=True, index=True, nullable=False)
 
     # OAuth Fields (O estritamente necessário)
-    oauth_provider = Column(Enum(OAuthProvider), nullable=False)
+    oauth_provider = Column(String(50), nullable=False)
     oauth_id = Column(String(255), nullable=False, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)

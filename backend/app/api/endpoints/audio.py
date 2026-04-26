@@ -22,7 +22,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 async def list_project_audios(
         project_id: uuid.UUID,
         db: AsyncSession = Depends(get_db),
-        user_id: str = Depends(get_current_user_id)
+        user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """List all audio files belonging to a project"""
     try:
@@ -39,7 +39,7 @@ async def upload_audio(
         project_id: str,
         file: UploadFile = File(...),
         db: AsyncSession = Depends(get_db),
-        user_id: str = Depends(get_current_user_id)
+        user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Upload and analyze audio file"""
 
@@ -92,7 +92,7 @@ async def upload_audio(
 async def get_audio_analysis(
         audio_id: uuid.UUID,
         db: AsyncSession = Depends(get_db),
-        user_id: str = Depends(get_current_user_id)
+        user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Get previously computed audio analysis metadata"""
     try:
@@ -107,7 +107,7 @@ async def get_audio_analysis(
 async def get_audio_file(
         audio_id: uuid.UUID,
         db: AsyncSession = Depends(get_db),
-        user_id: str = Depends(get_current_user_id)
+        user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Download the actual audio file"""
     try:
@@ -128,7 +128,7 @@ async def get_audio_file(
 async def delete_audio(
         audio_id: uuid.UUID,
         db: AsyncSession = Depends(get_db),
-        user_id: str = Depends(get_current_user_id)
+        user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Delete audio file from DB and disk"""
     try:
@@ -148,7 +148,7 @@ async def adjust_audio_bpm(
     audio_id: uuid.UUID,
     target_bpm: float = 120.0,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Adjust BPM of audio file (overwrites original)"""
     try:
@@ -169,7 +169,7 @@ async def cut_audio(
     inicio_segundos: float = 0.0,
     fim_segundos: float = 30.0,
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Cut audio between inicio_segundos and fim_segundos and save as new record linked to original"""
     try:
@@ -189,7 +189,7 @@ async def separate_audio_tracks(
     audio_id: uuid.UUID,
     instrument: str = "guitarra",
     db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_current_user_id)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """Separate instrument tracks from audio"""
     try:
