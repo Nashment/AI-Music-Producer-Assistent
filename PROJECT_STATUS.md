@@ -1,175 +1,119 @@
-# 📊 Project Status - AI Music Producer Assistant
+# Project Status
 
-## Overview
+Última atualização: 2026-04-27
 
-This document provides a comprehensive overview of the current implementation status of the AI Music Producer Assistant project.
+## Resumo Executivo
 
-## ✅ Completed Components
+- Backend: funcional e com rotas principais implementadas
+- Worker/Celery: funcional para pipeline de geração
+- Frontend: apenas estrutura inicial de pastas
+- Testes: estrutura criada, implementação incompleta
 
-### Backend (100% Complete)
-- **FastAPI Application**: Fully configured with CORS, middleware, and error handling
-- **Database Layer**: PostgreSQL with SQLAlchemy ORM, connection pooling, and migrations
-- **Authentication**: OAuth 2.0 integration with Google, GitHub, and Microsoft providers
-- **API Endpoints**: Complete REST API for users, projects, audio, and generation
-- **Business Logic**: All services implemented (User, Project, Audio, Generation)
-- **Asynchronous Processing**: Celery integration with Redis for background tasks
-- **Worker Integration**: Audio analysis, Suno AI generation, and conversion utilities
-- **Docker Setup**: Multi-service containerization with health checks
+## Estado por Área
 
-### Worker Integration (100% Complete)
-- **Audio Analysis**: BPM detection, key extraction, chord analysis using Librosa
-- **AI Generation**: Suno API integration for music generation
-- **Audio Processing**: Cutting, BPM adjustment, track separation
-- **Notation Conversion**: MIDI to sheet music and tablature generation
-- **Celery Tasks**: Asynchronous task processing for all operations
+### Backend API
+Status: implementado
 
-### Infrastructure (100% Complete)
-- **Docker Compose**: PostgreSQL, Redis, Backend, and pgAdmin services
-- **Database Schema**: Complete table definitions and relationships
-- **Environment Configuration**: Comprehensive `.env.example` with all variables
-- **Documentation**: Detailed setup guides and API documentation
+Implementado no código:
+- FastAPI em `backend/main.py`
+- Router principal em `backend/app/api/router.py`
+- Endpoints:
+	- users (`backend/app/api/endpoints/user.py`)
+	- projects (`backend/app/api/endpoints/projects.py`)
+	- audio (`backend/app/api/endpoints/audio.py`)
+	- generation (`backend/app/api/endpoints/generation.py`)
 
-## ❌ Pending Components
+### Autenticação
+Status: parcialmente implementada
 
-### Frontend (0% Complete)
-- **React SPA**: No implementation yet
-- **Authentication UI**: OAuth login flows
-- **Dashboard**: Project management interface
-- **Audio Upload**: File handling and progress tracking
-- **Generation Interface**: Prompt input and status monitoring
-- **Audio Playback**: Web Audio API integration
+Implementado no código:
+- OAuth Google login + callback
+- JWT para rotas protegidas
 
-### Testing (10% Complete)
-- **Test Structure**: Pytest setup with fixtures and configuration
-- **Test Files**: Placeholder test files created
-- **Implementation**: All tests marked as TODO, need actual implementation
+Não implementado como endpoint:
+- GitHub callback/login
+- Microsoft callback/login
 
-### Advanced Features (0% Complete)
-- **Cloud Storage**: AWS S3 integration for file storage
-- **Real-time Updates**: WebSocket support for live generation status
-- **Advanced Synthesis**: FluidSynth integration for MIDI rendering
-- **Notation Tools**: MuseScore/LilyPond for professional sheet music
-- **LLM Routing**: LangChain for dynamic AI model selection
+### Worker e Geração Assíncrona
+Status: implementado
 
-## 📈 Implementation Progress
+Implementado no código:
+- Celery app em `backend/worker/celery_app.py`
+- Tasks em `backend/worker/tasks/generation_tasks.py`
+- Orquestração de submissão em `backend/app/services/generation_service.py`
 
-| Component | Status | Completion | Priority |
-|-----------|--------|------------|----------|
-| Backend API | ✅ Complete | 100% | High |
-| OAuth Authentication | ✅ Complete | 100% | High |
-| Database Schema | ✅ Complete | 100% | High |
-| Worker Integration | ✅ Complete | 100% | High |
-| Docker Setup | ✅ Complete | 100% | High |
-| Documentation | ✅ Complete | 100% | Medium |
-| Frontend SPA | ❌ Pending | 0% | High |
-| Unit Tests | ❌ Pending | 0% | Medium |
-| Cloud Storage | ❌ Pending | 0% | Low |
-| Real-time Updates | ❌ Pending | 0% | Medium |
-| Advanced Synthesis | ❌ Pending | 0% | Low |
+### Dados e Persistência
+Status: implementado
 
-## 🔄 Current Capabilities
+Implementado no código:
+- SQLAlchemy models em `backend/app/data/models.py`
+- Sessão async e health check em `backend/app/data/database.py`
+- Scripts SQL em `docker/SQL/`
 
-### What Works Now
-1. **User Authentication**: OAuth login via Google/GitHub/Microsoft
-2. **Project Management**: Create, read, update, delete music projects
-3. **Audio Upload**: File upload with automatic analysis (BPM, key, signature)
-4. **Music Generation**: AI-powered music creation via Suno API
-5. **Asynchronous Processing**: Background task execution with status tracking
-6. **Audio Processing**: BPM adjustment, audio cutting, track separation
-7. **Notation Generation**: Basic MIDI to sheet music/tablature conversion
+### Frontend
+Status: não implementado
 
-### API Endpoints Ready
-- Authentication: `/api/v1/users/auth/*`
-- Projects: `/api/v1/projects/*`
-- Audio: `/api/v1/audio/*`
-- Generation: `/api/v1/generation/*`
+Situação atual no repositório:
+- Pastas existentes em `frontend/src/`
+- `frontend/src/main.tsx` vazio
+- Sem componentes, páginas ou integração API funcional
 
-### Docker Services Running
-- PostgreSQL (Database)
-- Redis (Task Queue)
-- FastAPI Backend (API)
-- pgAdmin (Database Management)
+### Testes
+Status: incompleto
 
-## 🚀 Next Development Phase
+Situação atual no repositório:
+- Ficheiros de teste existem em `backend/tests/`
+- Grande parte com `TODO` e `pass`
+- Não representam cobertura real da aplicação
 
-### Phase 1: Frontend Development (May 2026)
-- Initialize React + TypeScript project
-- Implement OAuth authentication UI
-- Create project management dashboard
-- Build audio upload interface
-- Add generation request forms
-- Integrate with backend API
+## Endpoints Disponíveis Hoje
 
-### Phase 2: Testing & Quality (June 2026)
-- Implement comprehensive unit tests
-- Add integration tests for API endpoints
-- Set up CI/CD pipeline
-- Performance testing and optimization
+Base: `/api/v1`
 
-### Phase 3: Advanced Features (July 2026)
-- AWS S3 for scalable file storage
-- WebSocket for real-time updates
-- Enhanced audio synthesis
-- Professional notation generation
-- Beta release and user testing
+### Users
+- `GET /users/auth/google/login`
+- `GET /users/auth/google/callback?code=...`
+- `GET /users/me`
+- `PUT /users/me`
+- `DELETE /users/me`
 
-## 🛠️ Development Environment
+### Projects
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/{project_id}`
+- `PUT /projects/{project_id}`
+- `DELETE /projects/{project_id}`
 
-### Prerequisites
-- Docker & Docker Compose
-- Python 3.11+ (for local development)
-- Node.js 18+ (for frontend development)
-- OAuth credentials for testing
+### Audio
+- `GET /audio/project/{project_id}`
+- `POST /audio/project/{project_id}/upload`
+- `GET /audio/analysis/{audio_id}`
+- `GET /audio/{audio_id}`
+- `DELETE /audio/{audio_id}`
+- `POST /audio/{audio_id}/adjust-bpm`
+- `POST /audio/{audio_id}/cut`
+- `POST /audio/{audio_id}/separate-tracks`
 
-### Quick Start
-```bash
-# Clone repository
-git clone <repository-url>
-cd AI-Music-Producer-Assistent
+### Generation
+- `POST /generation`
+- `POST /generation/cover`
+- `POST /generation/tablature/{audio_id}`
+- `POST /generation/partitura/{audio_id}`
+- `GET /generation/{generation_id}/status`
+- `GET /generation/{generation_id}`
+- `DELETE /generation/{generation_id}`
 
-# Start services
-cd docker/
-docker-compose up -d
+## Infraestrutura Docker
 
-# Backend API available at: http://localhost:8000
-# API Documentation: http://localhost:8000/docs
-# pgAdmin: http://localhost:5050
-```
+`docker/docker-compose.yml` define:
+- `postgres`
+- `redis`
+- `backend`
+- `celery_worker`
+- `pgadmin`
 
-### Environment Setup
-```bash
-# Copy environment template
-cp backend/.env.example backend/.env
-# Configure OAuth credentials and database settings
-```
+## Próximo Trabalho Recomendado
 
-## 📚 Documentation Status
-
-- ✅ **README.md**: Main project overview and setup guide
-- ✅ **docs/ESTRUTURA_CRIADA.md**: Detailed architecture documentation
-- ✅ **docs/INTEGRACAO_WORKER.md**: Worker integration guide
-- ✅ **docs/OAUTH_IMPLEMENTATION.md**: OAuth setup and usage
-- ✅ **docs/OAUTH_SETUP.md**: Provider configuration guide
-- ✅ **docs/FRONTEND_STATUS.md**: Frontend development plan
-- ✅ **backend/README.md**: Backend-specific documentation
-
-## 🎯 Success Metrics
-
-- **Backend**: All core functionality implemented and tested
-- **API**: Complete REST API with proper authentication
-- **Worker**: Asynchronous processing working reliably
-- **Docker**: Easy deployment and development environment
-- **Documentation**: Comprehensive guides for all components
-
-## 📝 Notes
-
-- Project is well-architected for scalability and maintainability
-- Backend is production-ready with proper error handling and logging
-- Worker integration provides robust audio processing capabilities
-- OAuth implementation eliminates password management complexity
-- Docker setup enables consistent development and deployment environments
-
----
-
-**Last Updated:** April 2026
-**Status:** Backend Complete, Ready for Frontend Development
+1. Implementar frontend real (React/Vite + integração API)
+2. Completar testes de services/endpoints
+3. Consolidar documentação OAuth para não sugerir providers sem endpoint

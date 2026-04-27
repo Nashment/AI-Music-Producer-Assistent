@@ -1,185 +1,153 @@
-# 🎵 AI Music Producer Assistant
+# AI Music Producer Assistant
 
-> **Status:** Backend Complete, Frontend Pending (Academic Research Project - ISEL 2026)
+Status atual: backend funcional com FastAPI + Celery, frontend ainda em scaffolding.
 
-## Overview
+## Visão Geral
 
-A web-based music production assistant that leverages Generative AI and Large Language Models (LLMs) to overcome creative blocks. The platform allows users to upload a base audio track, provide text prompts (e.g., "generate a jazz piano solo"), and receive complementary musical arrangements in both audio and structured notation (sheet music/tabs).
+Plataforma para apoio a produção musical com IA:
+- Upload e análise de áudio base (BPM, key, assinatura temporal)
+- Geração assíncrona com Suno
+- Conversão opcional para partitura e tablatura
+- Gestão por projetos e utilizador autenticado
 
-## System Architecture
+## Estado Real do Projeto
 
-The system is built on a modular, service-oriented architecture designed to handle computationally heavy, asynchronous AI generation tasks without blocking the user interface.
+### Backend
+- Implementado e executável com FastAPI
+- Rotas de users, projects, audio e generation
+- Autenticação JWT com login OAuth Google
+- Persistência com PostgreSQL
 
-* **Backend:** RESTful API built in **Python** with FastAPI, handling business logic, audio processing, and system orchestration.
-* **AI Orchestration:** Integration with external AI services (Suno API) for music generation, with Celery for asynchronous processing.
-* **Database & Storage:** **PostgreSQL** for relational data persistence (users, project metadata) and local file storage for audio files.
-* **Authentication:** OAuth 2.0 integration with Google, GitHub, and Microsoft for secure, passwordless login.
-* **Frontend:** *Not yet implemented* - Planned as Single Page Application (SPA) built with React for seamless user interaction.
+### Worker
+- Celery com Redis
+- Task principal de geração em `worker.tasks.generation_tasks`
+- Pipeline de polling Suno e atualização de status na base de dados
 
-## Core Features
+### Frontend
+- Existe estrutura de pastas em `frontend/src/`
+- `frontend/src/main.tsx` está vazio
+- Não existe aplicação React funcional ainda
 
-1. **OAuth Authentication:** Secure login via Google, GitHub, or Microsoft accounts.
-2. **Context & Feature Extraction:** Automated analysis of uploaded audio files to extract musical characteristics (BPM, scale, key) using Librosa.
-3. **Generative Composition:** Integration with Suno AI API guided by text prompts and extracted harmonic context.
-4. **Multi-Format Output:** Translates generated compositions into synthesized audio and MIDI files.
-5. **Asynchronous Processing:** Celery workers handle heavy audio synthesis and AI model inference without blocking the API.
+### Testes
+- Pasta `backend/tests/` existe
+- Ficheiros de testes são maioritariamente placeholders (`TODO`/`pass`)
 
-## Project Structure
+## Estrutura (Resumo)
 
-```
-AI-Music-Producer-Assistent/
-├── backend/                    # FastAPI backend application
+```text
+projeto/
+├── backend/
 │   ├── app/
-│   │   ├── api/                # REST API endpoints
-│   │   ├── core/               # Configuration and auth
-│   │   ├── data/               # Database models and queries
-│   │   ├── services/           # Business logic services
-│   │   └── worker.py           # Celery task definitions
-│   ├── tests/                  # Unit tests (placeholders)
-│   ├── main.py                 # Application entry point
-│   ├── requirements.txt        # Python dependencies
-│   └── README.md               # Backend documentation
-├── worker/                     # AI models and audio utilities
-│   ├── ai_models/              # Suno API integration
-│   └── audio_utils/            # Audio processing tools
-├── docker/                     # Docker configuration
-│   ├── docker-compose.yml      # Multi-service setup
-│   ├── Dockerfile              # Backend container
-│   └── SQL/                    # Database initialization
-├── frontend/                   # Frontend (not implemented)
-│   └── src/
-│       └── main.tsx            # Placeholder
-└── docs/                       # Documentation
-    ├── README.md               # This file
-    ├── ESTRUTURA_CRIADA.md     # Project structure details
-    ├── INTEGRACAO_WORKER.md    # Worker integration guide
-    ├── OAUTH_IMPLEMENTATION.md # OAuth setup and usage
-    └── OAUTH_SETUP.md          # OAuth provider configuration
+│   │   ├── api/endpoints/
+│   │   ├── core/
+│   │   ├── data/
+│   │   ├── domain/dtos/endpoints/
+│   │   └── services/
+│   ├── worker/
+│   │   ├── ai_models/
+│   │   ├── audio_utils/
+│   │   ├── tasks/
+│   │   └── celery_app.py
+│   ├── tests/
+│   └── main.py
+├── docker/
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── SQL/
+├── docs/
+├── frontend/
+└── README.md
 ```
 
-## Quick Start
+## Arranque Rápido
 
-### Prerequisites
-- Docker and Docker Compose
-- Python 3.11+ (for local development)
-- OAuth credentials for Google/GitHub/Microsoft (see `docs/OAUTH_SETUP.md`)
+### Opção 1: Docker Compose (recomendado)
 
-### 1. Clone and Setup Environment
 ```bash
-git clone <repository-url>
-cd AI-Music-Producer-Assistent
-
-# Copy environment template
-cp backend/.env.example backend/.env
-# Edit .env with your OAuth credentials and database settings
+cd docker
+docker compose up -d
 ```
 
-### 2. Start Services with Docker
+Serviços iniciados:
+- Backend: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+- pgAdmin: `http://localhost:5050`
+
+### Opção 2: Backend local (sem container do backend)
+
 ```bash
-cd docker/
-docker-compose up -d
-```
-
-This starts:
-- PostgreSQL database (port 5432)
-- Redis for Celery (port 6379)
-- FastAPI backend (port 8000)
-- pgAdmin for database management (port 5050)
-
-### 3. Verify Installation
-- **API Health Check:** http://localhost:8000/health
-- **API Documentation:** http://localhost:8000/docs
-- **pgAdmin:** http://localhost:5050 (admin@example.com / admin)
-
-### 4. Test OAuth Flow
-See `docs/OAUTH_SETUP.md` for configuring OAuth providers and testing login flows.
-
-## Development
-
-### Backend Development
-```bash
-cd backend/
+cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+# Windows
+venv\Scripts\Activate.ps1
+pip install -r ..\docker\requirements.txt
 uvicorn main:app --reload
 ```
 
-### Running Tests
+### Worker Celery (local)
+
 ```bash
-cd backend/
-pytest
-# Note: Tests are currently placeholders and need implementation
+cd backend
+celery -A worker.celery_app:celery_app worker --pool=solo --loglevel=info
 ```
 
-### Worker Tasks
-```bash
-# Start Celery worker
-cd backend/
-celery -A app.worker worker --loglevel=info
+Opcional (Flower):
 
-# Monitor tasks (optional)
-celery -A app.worker flower
+```bash
+cd backend
+celery -A worker.celery_app:celery_app flower
 ```
 
-## API Endpoints
+## Endpoints Reais da API
 
-### Authentication
-- `GET /api/v1/users/auth/{provider}/login` - Initiate OAuth login
-- `POST /api/v1/users/auth/{provider}/callback` - Handle OAuth callback
-- `GET /api/v1/users/me` - Get current user profile (JWT protected)
+Prefixo base: `/api/v1`
+
+### Users
+- `GET /users/auth/google/login`
+- `GET /users/auth/google/callback?code=...`
+- `GET /users/me`
+- `PUT /users/me`
+- `DELETE /users/me`
 
 ### Projects
-- `GET /api/v1/projects` - List user projects
-- `POST /api/v1/projects` - Create new project
-- `GET /api/v1/projects/{id}` - Get project details
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/{project_id}`
+- `PUT /projects/{project_id}`
+- `DELETE /projects/{project_id}`
 
 ### Audio
-- `POST /api/v1/audio/upload` - Upload and analyze audio file
-- `GET /api/v1/audio/{id}` - Get audio file info
+- `GET /audio/project/{project_id}`
+- `POST /audio/project/{project_id}/upload`
+- `GET /audio/analysis/{audio_id}`
+- `GET /audio/{audio_id}`
+- `DELETE /audio/{audio_id}`
+- `POST /audio/{audio_id}/adjust-bpm`
+- `POST /audio/{audio_id}/cut`
+- `POST /audio/{audio_id}/separate-tracks`
 
 ### Generation
-- `POST /api/v1/generation` - Request music generation
-- `GET /api/v1/generation/{id}` - Get generation status/results
+- `POST /generation`
+- `POST /generation/cover`
+- `POST /generation/tablature/{audio_id}`
+- `POST /generation/partitura/{audio_id}`
+- `GET /generation/{generation_id}/status`
+- `GET /generation/{generation_id}`
+- `DELETE /generation/{generation_id}`
 
-## Roadmap (2026)
+## Notas Importantes
 
-- [x] Backend API Development & AI Engine Prototyping (April)
-- [x] Worker Integration & Asynchronous Processing (April)
-- [x] OAuth Authentication Implementation (April)
-- [ ] Frontend SPA Development & Integration (May)
-- [ ] Full System Integration & Audio/Notation Synthesis (June)
-- [ ] Unit Tests Implementation (Ongoing)
-- [ ] Beta Release & Final Optimization (July)
+- A autenticação implementada no código é Google OAuth.
+- Existem variáveis para outros providers no `.env`, mas os endpoints não estão implementados.
+- O fluxo de geração foi movido para Celery (não usa `BackgroundTasks` da API para o pipeline principal).
 
-## Dependencies
+## Documentação Detalhada
 
-### Backend
-- **FastAPI** - Modern web framework
-- **SQLAlchemy** - ORM for database operations
-- **PostgreSQL** - Primary database
-- **Redis** - Message broker for Celery
-- **Celery** - Asynchronous task processing
-- **Librosa** - Audio analysis
-- **Authlib** - OAuth 2.0 client
-- **PyJWT** - JWT token handling
-
-### External Services
-- **Suno AI API** - Music generation
-- **Google/GitHub/Microsoft OAuth** - Authentication providers
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-This project is part of an academic research initiative at ISEL.
-
----
-
-*Developed by Paulo Nascimento as part of the Computer Engineering degree at ISEL.*
+Consultar:
+- `PROJECT_STATUS.md`
+- `QUICK_START.md`
+- `POSTMAN_QUERIES.md`
+- `docs/README.md`

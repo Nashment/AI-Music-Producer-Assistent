@@ -1,186 +1,55 @@
-# 🎵 AI Music Producer Assistant - Documentation
+# Documentação do Projeto
 
-> **Status:** Backend Complete, Frontend Pending (Academic Research Project - ISEL 2026)
+Este diretório contém documentação alinhada com o estado real do código no repositório.
 
-## Overview
+## Estado Atual (Código)
 
-A web-based music production assistant that leverages Generative AI and Large Language Models (LLMs) to overcome creative blocks. The platform allows users to upload a base audio track, provide text prompts (e.g., "generate a jazz piano solo"), and receive complementary musical arrangements in both audio and structured notation (sheet music/tabs).
+- Backend FastAPI: funcional
+- Worker Celery: funcional
+- Frontend: apenas scaffolding
+- Testes: maioritariamente placeholders
 
-## System Architecture
+## Endpoints Reais
 
-The system is built on a modular, service-oriented architecture designed to handle computationally heavy, asynchronous AI generation tasks without blocking the user interface.
+Base: `/api/v1`
 
-* **Backend:** RESTful API built in **Python** with FastAPI, handling business logic, audio processing, and system orchestration.
-* **AI Orchestration:** Integration with external AI services (Suno API) for music generation, with Celery for asynchronous processing.
-* **Database & Storage:** **PostgreSQL** for relational data persistence (users, project metadata) and local file storage for audio files.
-* **Authentication:** OAuth 2.0 integration with Google, GitHub, and Microsoft for secure, passwordless login.
-* **Frontend:** *Not yet implemented* - Planned as Single Page Application (SPA) built with React for seamless user interaction.
-
-## Core Features
-
-1. **OAuth Authentication:** Secure login via Google, GitHub, or Microsoft accounts.
-2. **Context & Feature Extraction:** Automated analysis of uploaded audio files to extract musical characteristics (BPM, scale, key) using Librosa.
-3. **Generative Composition:** Integration with Suno AI API guided by text prompts and extracted harmonic context.
-4. **Multi-Format Output:** Translates generated compositions into synthesized audio and MIDI files.
-5. **Asynchronous Processing:** Celery workers handle heavy audio synthesis and AI model inference without blocking the API.
-
-## Current Implementation Status
-
-### ✅ Completed Components
-
-#### Backend (FastAPI)
-- RESTful API with endpoints for users, projects, audio, and generation
-- OAuth 2.0 authentication (Google, GitHub, Microsoft)
-- PostgreSQL database with SQLAlchemy ORM
-- Celery integration for asynchronous tasks
-- Audio processing with Librosa
-- Comprehensive error handling and logging
-
-#### Worker Integration
-- Suno AI API integration for music generation
-- Audio analysis tools (BPM detection, key extraction)
-- Audio processing utilities (cutting, BPM adjustment, track separation)
-- MIDI conversion and tablature generation
-- Celery task queue for background processing
-
-#### Docker & Infrastructure
-- Multi-service Docker Compose setup (PostgreSQL, Redis, Backend, pgAdmin)
-- Database initialization scripts
-- Health checks and service dependencies
-- Volume management for data persistence
-
-#### Documentation
-- Complete API documentation with OpenAPI/Swagger
-- OAuth setup guides for all providers
-- Worker integration details
-- Project structure and architecture overview
-
-### ❌ Pending Components
-
-#### Frontend
-- React SPA for user interface
-- Real-time status updates for generation tasks
-- Audio upload and playback interface
-- OAuth callback handling
-- Dashboard for managing projects and generations
-
-#### Testing
-- Unit tests for all services (currently placeholders)
-- Integration tests for API endpoints
-- End-to-end tests for complete workflows
-
-#### Additional Features
-- AWS S3 integration for cloud storage
-- LangChain for advanced LLM routing
-- WebSocket support for real-time updates
-- Advanced audio synthesis with FluidSynth
-- MuseScore/LilyPond integration for sheet music
-
-## Quick Start
-
-### Prerequisites
-- Docker and Docker Compose
-- Python 3.11+ (for local development)
-- OAuth credentials for Google/GitHub/Microsoft (see `OAUTH_SETUP.md`)
-
-### 1. Clone and Setup Environment
-```bash
-git clone <repository-url>
-cd AI-Music-Producer-Assistent
-
-# Copy environment template
-cp backend/.env.example backend/.env
-# Edit .env with your OAuth credentials and database settings
-```
-
-### 2. Start Services with Docker
-```bash
-cd docker/
-docker-compose up -d
-```
-
-This starts:
-- PostgreSQL database (port 5432)
-- Redis for Celery (port 6379)
-- FastAPI backend (port 8000)
-- pgAdmin for database management (port 5050)
-
-### 3. Verify Installation
-- **API Health Check:** http://localhost:8000/health
-- **API Documentation:** http://localhost:8000/docs
-- **pgAdmin:** http://localhost:5050 (admin@example.com / admin)
-
-### 4. Test OAuth Flow
-See `OAUTH_SETUP.md` for configuring OAuth providers and testing login flows.
-
-## API Endpoints
-
-### Authentication
-- `GET /api/v1/users/auth/{provider}/login` - Initiate OAuth login
-- `POST /api/v1/users/auth/{provider}/callback` - Handle OAuth callback
-- `GET /api/v1/users/me` - Get current user profile (JWT protected)
+### Users
+- `GET /users/auth/google/login`
+- `GET /users/auth/google/callback?code=...`
+- `GET /users/me`
+- `PUT /users/me`
+- `DELETE /users/me`
 
 ### Projects
-- `GET /api/v1/projects` - List user projects
-- `POST /api/v1/projects` - Create new project
-- `GET /api/v1/projects/{id}` - Get project details
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/{project_id}`
+- `PUT /projects/{project_id}`
+- `DELETE /projects/{project_id}`
 
 ### Audio
-- `POST /api/v1/audio/upload` - Upload and analyze audio file
-- `GET /api/v1/audio/{id}` - Get audio file info
+- `GET /audio/project/{project_id}`
+- `POST /audio/project/{project_id}/upload`
+- `GET /audio/analysis/{audio_id}`
+- `GET /audio/{audio_id}`
+- `DELETE /audio/{audio_id}`
+- `POST /audio/{audio_id}/adjust-bpm`
+- `POST /audio/{audio_id}/cut`
+- `POST /audio/{audio_id}/separate-tracks`
 
 ### Generation
-- `POST /api/v1/generation` - Request music generation
-- `GET /api/v1/generation/{id}` - Get generation status/results
+- `POST /generation`
+- `POST /generation/cover`
+- `POST /generation/tablature/{audio_id}`
+- `POST /generation/partitura/{audio_id}`
+- `GET /generation/{generation_id}/status`
+- `GET /generation/{generation_id}`
+- `DELETE /generation/{generation_id}`
 
-## Roadmap (2026)
+## Ficheiros desta pasta
 
-- [x] Backend API Development & AI Engine Prototyping (April)
-- [x] Worker Integration & Asynchronous Processing (April)
-- [x] OAuth Authentication Implementation (April)
-- [ ] Frontend SPA Development & Integration (May)
-- [ ] Full System Integration & Audio/Notation Synthesis (June)
-- [ ] Unit Tests Implementation (Ongoing)
-- [ ] Beta Release & Final Optimization (July)
-
-## Dependencies
-
-### Backend
-- **FastAPI** - Modern web framework
-- **SQLAlchemy** - ORM for database operations
-- **PostgreSQL** - Primary database
-- **Redis** - Message broker for Celery
-- **Celery** - Asynchronous task processing
-- **Librosa** - Audio analysis
-- **Authlib** - OAuth 2.0 client
-- **PyJWT** - JWT token handling
-
-### External Services
-- **Suno AI API** - Music generation
-- **Google/GitHub/Microsoft OAuth** - Authentication providers
-
-## Documentation Files
-
-- **[ESTRUTURA_CRIADA.md](ESTRUTURA_CRIADA.md)** - Detailed project structure and architecture
-- **[INTEGRACAO_WORKER.md](INTEGRACAO_WORKER.md)** - Worker integration guide and Celery setup
-- **[OAUTH_IMPLEMENTATION.md](OAUTH_IMPLEMENTATION.md)** - OAuth implementation details and API usage
-- **[OAUTH_SETUP.md](OAUTH_SETUP.md)** - OAuth provider configuration guide
-- **[FRONTEND_STATUS.md](FRONTEND_STATUS.md)** - Frontend development plan
-- **[PROJECT_STATUS.md](../PROJECT_STATUS.md)** - Comprehensive project status overview
-- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - Contribution guidelines
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-This project is part of an academic research initiative at ISEL.
-
----
-
-*Developed by Paulo Nascimento as part of the Computer Engineering degree at ISEL.*
+- `ESTRUTURA_CRIADA.md`: estrutura de diretórios e componentes reais
+- `INTEGRACAO_WORKER.md`: fluxo Celery/Suno implementado
+- `OAUTH_IMPLEMENTATION.md`: estado da autenticação no código
+- `OAUTH_SETUP.md`: configuração prática para Google OAuth
+- `FRONTEND_STATUS.md`: estado real do frontend
