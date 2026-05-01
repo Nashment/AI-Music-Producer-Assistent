@@ -2,6 +2,8 @@
 FastAPI Application Factory
 """
 
+import logging
+import logging.config
 import sys
 from pathlib import Path
 
@@ -14,8 +16,44 @@ if str(backend_dir) not in sys.path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.error_handlers import configure_error_handlers
 from app.api.router import router
 from app.data.database import db
+
+# ---------------------------------------------------------------------------
+# Logging
+# Formato estruturado com nível, logger, trace_id e mensagem.
+# Em produção podes trocar o handler por um JSON formatter (python-json-logger).
+# ---------------------------------------------------------------------------
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "root": {
+        "level": "DEBUG" if settings.DEBUG else "INFO",
+        "handlers": ["console"],
+    },
+    # Reduz ruído de libs externas em produção
+    "loggers": {
+        "uvicorn":        {"level": "INFO",    "propagate": True},
+        "uvicorn.access": {"level": "WARNING", "propagate": True},
+        "sqlalchemy":     {"level": "WARNING", "propagate": True},
+        "celery":         {"level": "INFO",    "propagate": True},
+        "music_ai":       {"level": "DEBUG",   "propagate": True},
+    },
+})
 
 
 def create_app() -> FastAPI:
@@ -40,6 +78,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Error handlers — RFC 7807 Problem Details (antes das rotas)
+    configure_error_handlers(app)
 
     # Include API routes
     app.include_router(router)

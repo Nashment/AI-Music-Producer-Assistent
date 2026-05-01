@@ -1,3 +1,9 @@
+# PyTorch CPU (pinado na 2.1.x — versões >= 2.4 do torchaudio exigem torchcodec
+# para guardar WAV, módulo que o Demucs não instala automaticamente)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.1.2+cpu
+torchaudio==2.1.2+cpu
+
 # Web Framework
 fastapi==0.104.1
 uvicorn[standard]==0.24.0

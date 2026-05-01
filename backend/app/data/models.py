@@ -126,7 +126,7 @@ class Generation(Base):
 
     # Status and results
     status = Column(Enum(GenerationStatusEnum), default=GenerationStatusEnum.PENDING)
-    audio_file_path = Column(String(512))
+    audio_file_path = Column(String(512))   # áudio final: instrumento isolado, BPM e tom corrigidos
     midi_file_path = Column(String(512))
     partitura_file_path = Column(String(512))
     tablatura_file_path = Column(String(512))

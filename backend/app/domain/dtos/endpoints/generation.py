@@ -8,11 +8,10 @@ from pydantic import BaseModel
 
 class InstrumentType(str, Enum):
     PIANO = "piano"
-    GUITAR = "guitar"
-    VIOLIN = "violin"
-    DRUMS = "drums"
-    BASS = "bass"
-    FLUTE = "flute"
+    GUITAR = "guitarra"
+    DRUMS = "bateria"
+    BASS = "baixo"
+    OTHER = "outros"
 
 
 class MusicGenreType(str, Enum):

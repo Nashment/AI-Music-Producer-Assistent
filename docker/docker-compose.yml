@@ -28,10 +28,31 @@ services:
   redis:
     image: redis:7-alpine
     container_name: music_ai_redis
+    # AOF (Append Only File): cada escrita na fila é persistida em disco imediatamente.
+    # Se o container cair, o Redis replaya o ficheiro na próxima subida e reconstrói
+    # o estado exato da fila — nenhuma task se perde.
+    #
+    # Flags:
+    #   --appendonly yes          → ativa AOF
+    #   --appendfsync everysec    → flush para disco a cada segundo (equilíbrio entre
+    #                               durabilidade e performance; usa "always" para garantia
+    #                               máxima ao custo de mais I/O)
+    #   --save 3600 1             → RDB snapshot extra: dump completo a cada hora se
+    #                               houver pelo menos 1 alteração (camada de segurança
+    #                               adicional ao AOF)
+    #   --save 300 100            → RDB snapshot: dump a cada 5 min se houver ≥100
+    #                               alterações (útil em períodos de alta carga)
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 3600 1
+      --save 300 100
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -61,6 +82,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    restart: unless-stopped
     networks:
       - music_ai_network
     depends_on:
@@ -85,6 +107,7 @@ services:
       - ../backend:/app
       - ../generations:/app/generations
     command: celery -A worker.celery_app:celery_app worker --pool=solo --loglevel=info
+    restart: unless-stopped
     networks:
       - music_ai_network
     depends_on:

@@ -89,8 +89,9 @@ CREATE TABLE generations (
     tempo_override INTEGER,
 
     -- Status and results
+    -- audio_file_path armazena o áudio final: instrumento isolado, BPM e tom corrigidos.
     status VARCHAR(20) DEFAULT 'pending',  -- pending, processing, completed, failed
-    audio_file_path VARCHAR(512),
+    audio_fi    le_path VARCHAR(512),
     midi_file_path VARCHAR(512),
     partitura_file_path VARCHAR(512),
     tablatura_file_path VARCHAR(512),
@@ -101,7 +102,7 @@ CREATE TABLE generations (
 );
 
 -- ==========================================
--- INDEXES FOR PERFORMANCE (Corrigidos)
+-- INDEXES FOR PERFORMANCE
 -- ==========================================
 
 -- Índices para os Utilizadores

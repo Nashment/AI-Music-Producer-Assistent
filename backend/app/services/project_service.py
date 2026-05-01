@@ -1,98 +1,86 @@
 """
 Project Service - Project management business logic
+
+Os metodos deste servico devolvem Resultado[ProjetoErro, T] em vez de
+lancar excecoes. A traducao para HTTP fica exclusivamente no endpoint.
 """
 
 import uuid
-from typing import List, Optional
-# Importamos as Queries necessárias (assume-se que estão no teu __init__.py de data)
+
 from app.data import ProjectQueries, GenerationQueries
+from app.domain.result import Resultado, Sucesso, Falha
+from app.domain.errors.project_errors import (
+    ProjetoNaoEncontrado,
+    TituloProjetoInvalido,
+    TituloProjetoDuplicado,
+)
 
 
 class ProjectService:
-    """
-    Service for project operations
-    """
-
     def __init__(self, db_session):
-        """
-        Initialize service
-
-        Args:
-            db_session: A sessão ativa do SQLAlchemy (injeção de dependência do FastAPI)
-        """
         self.db = db_session
 
-    async def create_project(self, user_id: str, title: str, description: str, tempo: int):
-        """Create a new music project"""
+    async def create_project(
+        self, user_id: str, title: str, description: str, tempo: int
+    ) -> Resultado:
+        """Cria um novo projeto, validando titulo e unicidade."""
         clean_title = title.strip()
-
         if not clean_title:
-            raise ValueError("O título do projeto não pode estar vazio.")
+            return Falha(TituloProjetoInvalido())
 
-            # Verificar nome duplicado para este utilizador
-            existing = await ProjectQueries.get_user_projects(db=self.db, user_id=user_id)
-            if any(p.title.strip().lower() == clean_title.lower() for p in existing):
-                raise ValueError(f"Já tens um projeto com o nome '{clean_title}'.")
+        existing = await ProjectQueries.get_user_projects(db=self.db, user_id=user_id)
+        if any(p.title.strip().lower() == clean_title.lower() for p in existing):
+            return Falha(TituloProjetoDuplicado(titulo=clean_title))
 
-        try:
-            projeto = await ProjectQueries.create_project(
-                db=self.db,
-                user_id=user_id,
-                title=clean_title,
-                description=description,
-                tempo=tempo
-            )
-            return projeto
-        except Exception as e:
-            print(f"Erro ao criar projeto: {e}")
-            raise
+        projeto = await ProjectQueries.create_project(
+            db=self.db,
+            user_id=user_id,
+            title=clean_title,
+            description=description,
+            tempo=tempo,
+        )
+        return Sucesso(projeto)
 
-    async def get_project(self, project_id: str, user_id: str):
-        """Get project details with authorization check"""
+    async def get_project(self, project_id: str, user_id: str) -> Resultado:
+        """Obtem o projeto e verifica o dono. Nao distingue nao-existe de nao-e-teu."""
         project = await ProjectQueries.get_project(db=self.db, project_id=uuid.UUID(project_id))
+        if not project or str(project.user_id) != user_id:
+            return Falha(ProjetoNaoEncontrado(project_id=project_id))
+        return Sucesso(project)
 
-        if not project:
-            return None
+    async def list_user_projects(self, user_id: str) -> Resultado:
+        """Lista todos os projetos do utilizador."""
+        projects = await ProjectQueries.get_user_projects(db=self.db, user_id=user_id)
+        return Sucesso(projects)
 
-        # VERIFICAÇÃO DE SEGURANÇA: Este projeto pertence a este utilizador?
-        if str(project.user_id) != user_id:
-            raise PermissionError("Não tens autorização para aceder a este projeto.")
-
-        return project
-
-    async def list_user_projects(self, user_id: str):
-        """List all projects for a user"""
-        projetos = await ProjectQueries.get_user_projects(db=self.db, user_id=user_id)
-        return projetos
-
-    async def update_project(self, project_id: str, user_id: str, update_data: dict):
-        """Update project information"""
-        # 1. Verifica se o projeto existe e pertence ao utilizador
-        await self.get_project(project_id, user_id)
-
-        # 2. Se não deu erro de permissão acima, podemos atualizar em segurança
-        projeto_atualizado = await ProjectQueries.update_project(
+    async def update_project(
+        self, project_id: str, user_id: str, update_data: dict
+    ) -> Resultado:
+        """Atualiza os dados do projeto apos verificar o dono."""
+        resultado = await self.get_project(project_id, user_id)
+        if isinstance(resultado, Falha):
+            return resultado
+        updated = await ProjectQueries.update_project(
             db=self.db,
             project_id=uuid.UUID(project_id),
-            **update_data  # Desempacota o dicionário (ex: {"title": "Novo Título", "tempo": 140})
+            **update_data,
         )
-        return projeto_atualizado
+        return Sucesso(updated)
 
-    async def delete_project(self, project_id: str, user_id: str) -> bool:
-        """Delete a project"""
-        # 1. Verifica a propriedade do projeto (Segurança)
-        await self.get_project(project_id, user_id)
+    async def delete_project(self, project_id: str, user_id: str) -> Resultado:
+        """Apaga o projeto (e em cascade as geracoes associadas) apos verificar o dono."""
+        resultado = await self.get_project(project_id, user_id)
+        if isinstance(resultado, Falha):
+            return resultado
+        await ProjectQueries.delete_project(db=self.db, project_id=uuid.UUID(project_id))
+        return Sucesso(None)
 
-        # 2. Apaga o projeto. A lógica de CASCADE que definimos nos modelos
-        #    (ondelete="CASCADE") vai limpar automaticamente as gerações associadas na base de dados!
-        sucesso = await ProjectQueries.delete_project(db=self.db, project_id=uuid.UUID(project_id))
-        return sucesso
-
-    async def list_project_generations(self, project_id: str, user_id: str):
-        """List all music generations for a project"""
-        # 1. Verifica se o utilizador tem acesso ao projeto
-        await self.get_project(project_id, user_id)
-
-        # 2. Vai buscar o histórico de gerações de IA deste projeto
-        geracoes = await GenerationQueries.get_project_generations(db=self.db, project_id=uuid.UUID(project_id))
-        return geracoes
+    async def list_project_generations(self, project_id: str, user_id: str) -> Resultado:
+        """Lista todas as geracoes de IA de um projeto."""
+        resultado = await self.get_project(project_id, user_id)
+        if isinstance(resultado, Falha):
+            return resultado
+        generations = await GenerationQueries.get_project_generations(
+            db=self.db, project_id=uuid.UUID(project_id)
+        )
+        return Sucesso(generations)
