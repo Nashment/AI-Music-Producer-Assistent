@@ -59,3 +59,17 @@ class FilaIndisponivel(GeneracaoErro):
 class FalhaProcessamentoAudio(GeneracaoErro):
     """A operacao de processamento de audio falhou (ex: extracao MIDI, compilacao PDF)."""
     operacao: str = ""
+
+
+@dataclass(frozen=True)
+class IntervaloCorteInvalido(GeneracaoErro):
+    """O intervalo de corte e invalido (inicio>=fim, fora dos limites do
+    audio, ou janela maior do que o maximo permitido)."""
+    detalhe: str = ""
+
+
+@dataclass(frozen=True)
+class FicheiroGeracaoIndisponivel(GeneracaoErro):
+    """A geracao existe mas o ficheiro de audio fisico nao esta disponivel
+    (ainda em processamento, perdido em disco, ou status != COMPLETED)."""
+    detalhe: str = ""

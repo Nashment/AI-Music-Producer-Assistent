@@ -1,0 +1,168 @@
+/* =============================================================================
+ * Domínio de geração: painel de prompt, árvore de gerações/cortes,
+ * waveform de corte e painel de notação.
+ * ========================================================================= */
+
+/* --------------------------- Generate panel ----------------------------- */
+.generate-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.generate-panel header h3 { margin: 0; }
+.generate-panel-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.generate-panel-form textarea { min-height: 96px; }
+
+/* --------------------------- Generation tree ---------------------------- */
+.gen-tree,
+.gen-tree-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.gen-tree-children {
+    margin-top: 2px;
+    padding-left: var(--space-4);
+    border-left: 1px dashed var(--border-strong);
+    margin-left: 8px;
+}
+.gen-tree-empty {
+    padding: var(--space-3);
+    text-align: center;
+}
+
+.gen-tree-item {
+    width: 100%;
+    background: transparent;
+    color: var(--text-soft);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.55rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-2);
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+.gen-tree-item:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text);
+}
+.gen-tree-item.is-selected {
+    background: var(--primary-soft);
+    color: var(--text);
+    border-color: rgba(124, 92, 255, 0.4);
+}
+.gen-tree-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.gen-tree-marker {
+    color: var(--muted);
+    font-size: 0.85rem;
+    width: 14px;
+    display: inline-block;
+    text-align: center;
+}
+.gen-tree-item.is-selected .gen-tree-marker { color: var(--primary); }
+.gen-tree-item-cut .gen-tree-marker { color: var(--accent); }
+
+.gen-tree-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.gen-tree-text strong {
+    font-weight: 500;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --------------------------- Waveform cutter ---------------------------- */
+.waveform-cutter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.waveform-cutter header h3 { margin: 0; }
+.waveform-container {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-3);
+    min-height: 130px;
+}
+.waveform-loading {
+    padding: var(--space-3);
+    color: var(--muted);
+}
+.waveform-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+.waveform-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.waveform-sliders {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+}
+@media (max-width: 600px) {
+    .waveform-sliders { grid-template-columns: 1fr; }
+}
+.waveform-form input[type='range'] {
+    width: 100%;
+    accent-color: var(--accent);
+    background: transparent;
+    padding: 0;
+}
+
+/* --------------------------- Cut action panel --------------------------- */
+.cut-action-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+.cut-action-panel header h3 { margin: 0; }
+.cut-action-buttons {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+.cut-action-pdf {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.cut-action-pdf-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+}
+.cut-action-pdf iframe {
+    width: 100%;
+    height: 480px;
+    border: none;
+    background: #fff;
+}

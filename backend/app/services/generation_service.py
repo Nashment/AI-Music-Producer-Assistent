@@ -9,9 +9,10 @@ negócio e a tradução para HTTP fica exclusivamente no endpoint.
 import asyncio
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from app.data import AudioQueries, GenerationQueries
+from app.data.models import GenerationStatusEnum
 from app.domain.result import Resultado, Sucesso, Falha
 from app.domain.errors.generation_errors import (
     AudioNaoEncontrado,
@@ -21,7 +22,15 @@ from app.domain.errors.generation_errors import (
     WorkerIndisponivel,
     FilaIndisponivel,
     FalhaProcessamentoAudio,
+    IntervaloCorteInvalido,
+    FicheiroGeracaoIndisponivel,
 )
+
+try:
+    from worker.audio_utils.corte_audio import cortar_audio, obter_duracao_audio
+except ImportError as e:
+    print(f"Warning: Could not import corte_audio module: {e}")
+    cortar_audio = obter_duracao_audio = None
 
 try:
     from worker.audio_utils.audio_to_tablature2 import (
@@ -154,14 +163,28 @@ class GenerationService:
 
     async def generate_tablature(self, audio_id: uuid.UUID, user_id: str, tablatura_dir: str) -> Resultado:
         """Gera uma tablatura PDF a partir de um ficheiro de áudio existente."""
-        if not all([extrair_midi_do_audio, converter_midi_para_ly, injetar_inteligencia_no_ly,
-                    forcar_tablatura_no_ly, compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
-            return Falha(WorkerIndisponivel(detalhe="Módulos de tablatura não disponíveis."))
-
         input_resultado = await self._get_audio_path_or_fail(audio_id, user_id)
         if isinstance(input_resultado, Falha):
             return input_resultado
-        input_path = input_resultado.valor
+        return await self._generate_tablature_from_path(input_resultado.valor, tablatura_dir)
+
+    async def generate_partitura(self, audio_id: uuid.UUID, user_id: str, partitura_dir: str) -> Resultado:
+        """Gera uma partitura PDF a partir de um ficheiro de áudio existente."""
+        input_resultado = await self._get_audio_path_or_fail(audio_id, user_id)
+        if isinstance(input_resultado, Falha):
+            return input_resultado
+        return await self._generate_partitura_from_path(input_resultado.valor, partitura_dir)
+
+    async def _generate_tablature_from_path(
+        self,
+        input_path: Path,
+        tablatura_dir: str,
+    ) -> Resultado:
+        """Implementação reutilizável: aceita um Path de áudio (audio raw ou
+        áudio de uma geração) e devolve Sucesso(pdf_path)."""
+        if not all([extrair_midi_do_audio, converter_midi_para_ly, injetar_inteligencia_no_ly,
+                    forcar_tablatura_no_ly, compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
+            return Falha(WorkerIndisponivel(detalhe="Módulos de tablatura não disponíveis."))
 
         out = Path(tablatura_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -197,15 +220,14 @@ class GenerationService:
             for p in [midi_path, ly_path]:
                 p.unlink(missing_ok=True)
 
-    async def generate_partitura(self, audio_id: uuid.UUID, user_id: str, partitura_dir: str) -> Resultado:
-        """Gera uma partitura PDF a partir de um ficheiro de áudio existente."""
+    async def _generate_partitura_from_path(
+        self,
+        input_path: Path,
+        partitura_dir: str,
+    ) -> Resultado:
+        """Implementação reutilizável da geração de partitura a partir de um Path."""
         if not all([extrair_midi_do_audio, exportar_pdf_automatico]):
             return Falha(WorkerIndisponivel(detalhe="Módulos de partitura não disponíveis."))
-
-        input_resultado = await self._get_audio_path_or_fail(audio_id, user_id)
-        if isinstance(input_resultado, Falha):
-            return input_resultado
-        input_path = input_resultado.valor
 
         out = Path(partitura_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -225,6 +247,200 @@ class GenerationService:
             return Sucesso(str(pdf_path))
         finally:
             midi_path.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # Hierarquia: gerações por áudio + cortes
+    # ------------------------------------------------------------------
+
+    async def list_generations_for_audio(
+        self,
+        audio_id: uuid.UUID,
+        user_id: str,
+    ) -> Resultado:
+        """Lista gerações raiz (não cortes) para um áudio do utilizador.
+
+        Os cortes lêem-se separadamente via list_cuts_of_generation —
+        normalmente o frontend pede primeiro a lista de raízes e depois,
+        por cada raiz, os filhos.
+        """
+        audio_resultado = await self._get_audio_or_fail(audio_id, user_id)
+        if isinstance(audio_resultado, Falha):
+            return audio_resultado
+        gens = await GenerationQueries.list_generations_by_audio(
+            db=self.db, audio_file_id=audio_id, only_roots=True,
+        )
+        return Sucesso(gens)
+
+    async def list_cuts_for_generation(
+        self,
+        generation_id: str,
+        user_id: str,
+    ) -> Resultado:
+        """Lista os cortes de uma geração."""
+        parent_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(parent_resultado, Falha):
+            return parent_resultado
+        parent = parent_resultado.valor
+        cuts = await GenerationQueries.list_cuts_of_generation(
+            db=self.db, parent_generation_uuid=parent.id,
+        )
+        return Sucesso(cuts)
+
+    async def get_generation_audio_path(
+        self,
+        generation_id: str,
+        user_id: str,
+    ) -> Resultado:
+        """Devolve o Path absoluto do ficheiro de áudio de uma geração.
+
+        Falha se a geração não existir, ainda não tiver áudio
+        (status != COMPLETED) ou o ficheiro físico estiver perdido.
+        """
+        gen_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(gen_resultado, Falha):
+            return gen_resultado
+        gen = gen_resultado.valor
+        if not gen.audio_file_path:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="A geração ainda não tem áudio disponível.",
+            ))
+        path = Path(gen.audio_file_path)
+        if not path.exists():
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="O ficheiro de áudio da geração não foi encontrado em disco.",
+            ))
+        return Sucesso(path)
+
+    async def cut_generation(
+        self,
+        parent_generation_id: str,
+        user_id: str,
+        inicio_segundos: float,
+        fim_segundos: float,
+        output_dir: str,
+        max_window_seconds: float = 45.0,
+    ) -> Resultado:
+        """Cria um corte (clip) a partir de uma geração existente.
+
+        Passos:
+          1. Valida que a geração existe e é do utilizador.
+          2. Valida 0 <= inicio < fim, fim - inicio <= max_window.
+          3. Verifica que o ficheiro físico existe.
+          4. Corta o áudio para um novo ficheiro WAV em output_dir.
+          5. Persiste um novo registo `generations` com:
+                - parent_generation_id = id da geração original
+                - status = COMPLETED
+                - audio_file_path = caminho do novo ficheiro
+                - prompt = texto descritivo do corte
+        """
+        if cortar_audio is None or obter_duracao_audio is None:
+            return Falha(WorkerIndisponivel(detalhe="Módulo de corte de áudio indisponível."))
+
+        # 1) buscar geração pai + validar ownership
+        parent_resultado = await self.get_generation(parent_generation_id, user_id)
+        if isinstance(parent_resultado, Falha):
+            return parent_resultado
+        parent = parent_resultado.valor
+
+        # 2) validar intervalo
+        if inicio_segundos < 0 or fim_segundos <= inicio_segundos:
+            return Falha(IntervaloCorteInvalido(
+                detalhe="O início tem de ser >= 0 e menor do que o fim.",
+            ))
+        janela = fim_segundos - inicio_segundos
+        if janela > max_window_seconds:
+            return Falha(IntervaloCorteInvalido(
+                detalhe=f"O corte não pode ser maior do que {max_window_seconds:.0f} segundos.",
+            ))
+
+        # 3) verificar ficheiro físico do pai
+        if not parent.audio_file_path:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="A geração pai não tem áudio gerado.",
+            ))
+        parent_path = Path(parent.audio_file_path)
+        if not parent_path.exists():
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="O áudio da geração pai não está em disco.",
+            ))
+
+        # 4) corte físico em background thread
+        try:
+            duracao_total = await asyncio.to_thread(obter_duracao_audio, str(parent_path))
+        except Exception as e:
+            return Falha(FalhaProcessamentoAudio(operacao=f"obter_duracao: {e}"))
+        if inicio_segundos >= duracao_total:
+            return Falha(IntervaloCorteInvalido(
+                detalhe="O início está fora da duração do áudio.",
+            ))
+        # truncamos o fim à duração real, se necessário
+        fim_clamped = min(fim_segundos, duracao_total)
+
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cut_uuid = uuid.uuid4()
+        out_path = out_dir / f"cut_{cut_uuid.hex[:12]}.wav"
+
+        ok = await asyncio.to_thread(
+            cortar_audio,
+            str(parent_path),
+            str(out_path),
+            float(inicio_segundos),
+            float(fim_clamped),
+        )
+        if not ok or not out_path.exists():
+            return Falha(FalhaProcessamentoAudio(operacao="corte_audio"))
+
+        # 5) persistir novo registo
+        new_generation_id = str(uuid.uuid4())
+        prompt_descricao = (
+            f"Corte de {parent.generation_id} "
+            f"({inicio_segundos:.2f}s–{fim_clamped:.2f}s)"
+        )
+        cut = await GenerationQueries.create_generation(
+            db=self.db,
+            generation_id=new_generation_id,
+            user_id=parent.user_id,
+            project_id=parent.project_id,
+            audio_file_id=parent.audio_file_id,  # mantém referência ao áudio raiz
+            prompt=prompt_descricao,
+            instrument=parent.instrument,
+            genre=parent.genre,
+            duration=int(fim_clamped - inicio_segundos),
+            tempo_override=parent.tempo_override,
+            parent_generation_id=parent.id,
+            status=GenerationStatusEnum.COMPLETED,
+            audio_file_path=str(out_path),
+        )
+        return Sucesso(cut)
+
+    # ------------------------------------------------------------------
+    # Notação a partir de uma GERAÇÃO (em vez de um audio_file)
+    # ------------------------------------------------------------------
+
+    async def generate_tablature_from_generation(
+        self,
+        generation_id: str,
+        user_id: str,
+        tablatura_dir: str,
+    ) -> Resultado:
+        """Gera tablatura a partir do áudio físico de uma geração."""
+        path_resultado = await self.get_generation_audio_path(generation_id, user_id)
+        if isinstance(path_resultado, Falha):
+            return path_resultado
+        return await self._generate_tablature_from_path(path_resultado.valor, tablatura_dir)
+
+    async def generate_partitura_from_generation(
+        self,
+        generation_id: str,
+        user_id: str,
+        partitura_dir: str,
+    ) -> Resultado:
+        """Gera partitura a partir do áudio físico de uma geração."""
+        path_resultado = await self.get_generation_audio_path(generation_id, user_id)
+        if isinstance(path_resultado, Falha):
+            return path_resultado
+        return await self._generate_partitura_from_path(path_resultado.valor, partitura_dir)
 
     # ------------------------------------------------------------------
     # Helpers privados

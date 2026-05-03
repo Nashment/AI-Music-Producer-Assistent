@@ -2,7 +2,13 @@
 
 Comandos reais para levantar o projeto no estado atual do código.
 
-## 1. Levantar stack completa com Docker
+## 1. Pré-requisitos
+
+- Docker + Docker Compose
+- Python 3.11+ (para execução local)
+- Ficheiro `.env` configurado (ver secção Variáveis de Ambiente)
+
+## 2. Levantar stack completa com Docker
 
 ```bash
 cd docker
@@ -10,25 +16,20 @@ docker compose up -d
 docker compose ps
 ```
 
-Serviços esperados:
-- postgres
-- redis
-- backend
-- celery_worker
-- pgadmin
+Serviços esperados em estado `Up`:
+- `postgres`
+- `redis`
+- `backend`
+- `celery_worker`
+- `pgadmin`
 
-## 2. Verificar endpoints principais
-
+Verificar:
 - Health: `http://localhost:8000/health`
 - Swagger: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - pgAdmin: `http://localhost:5050`
 
-## 3. Rodar backend localmente (opcional)
-
-Usa isto se não quiseres usar o container `backend`.
-
-### Windows PowerShell
+## 3. Backend local (sem container do backend)
 
 ```powershell
 cd backend
@@ -38,19 +39,23 @@ pip install -r ..\docker\requirements.txt
 uvicorn main:app --reload
 ```
 
-## 4. Rodar worker localmente (opcional)
+> O servidor fica disponível em `http://localhost:8000`.
+
+## 4. Worker Celery local
 
 ```bash
 cd backend
 celery -A worker.celery_app:celery_app worker --pool=solo --loglevel=info
 ```
 
-Flower (opcional):
+Flower (painel de monitorização, opcional):
 
 ```bash
 cd backend
 celery -A worker.celery_app:celery_app flower
 ```
+
+> O Flower fica disponível em `http://localhost:5555`.
 
 ## 5. Parar serviços
 
@@ -59,119 +64,128 @@ cd docker
 docker compose down
 ```
 
-## 6. OAuth no estado atual
+## 6. Variáveis de Ambiente
 
-Implementado no código:
-- Google login
+O backend requer as seguintes variáveis (normalmente em `.env` na raiz do projeto
+ou injetadas pelo docker-compose):
 
-Endpoints:
-- `GET /api/v1/users/auth/google/login`
-- `GET /api/v1/users/auth/google/callback?code=...`
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `JWT_SECRET_KEY` | Sim | Chave secreta para assinar JWTs |
+| `JWT_ALGORITHM` | Não (default: `HS256`) | Algoritmo JWT |
+| `JWT_EXPIRATION_HOURS` | Não (default: `24`) | Validade do token em horas |
+| `GOOGLE_CLIENT_ID` | Sim (para OAuth) | Client ID do Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | Sim (para OAuth) | Client Secret do Google OAuth |
+| `GOOGLE_REDIRECT_URI` | Sim (para OAuth) | URI de callback registada no Google |
+| `DATABASE_URL` | Sim | URL PostgreSQL async (postgresql+asyncpg://...) |
+| `REDIS_URL` | Não (default: `redis://localhost:6379/0`) | URL do Redis |
+| `AUDIO_UPLOAD_DIR` | Não | Diretório de uploads de áudio |
+| `GENERATIONS_AUDIO_DIR` | Não | Diretório de output de áudio gerado |
+| `GENERATIONS_PARTITURA_DIR` | Não | Diretório de output de partituras |
+| `GENERATIONS_TABLATURA_DIR` | Não | Diretório de output de tablaturas |
 
-As rotas de GitHub/Microsoft não estão implementadas em `backend/app/api/endpoints/user.py`.
+## 7. Fluxo de teste rápido
 
-## 7. Checklist rápido
-
-- [ ] `docker compose ps` mostra serviços `Up`
-- [ ] `GET /health` responde
-- [ ] `/docs` abre
-- [ ] Worker consome tasks quando fazes `POST /api/v1/generation`
-
-## 🧪 Testar API
-
-### Test Health Check
 ```bash
+# 1. Verificar que a API está viva
 curl http://localhost:8000/health
-```
 
-### Test OAuth Endpoint
-```bash
+# 2. Obter URL de login Google
 curl http://localhost:8000/api/v1/users/auth/google/login
-```
 
-### Test com dados (Project)
-```bash
+# 3. Criar projeto (com token JWT obtido no callback)
 curl -X POST http://localhost:8000/api/v1/projects \
-  -H "Authorization: Bearer <seu_token>" \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"title": "Meu Projeto", "description": "Teste"}'
+  -d '{"title": "Teste", "description": "Projeto de teste", "tempo": 120}'
+
+# 4. Upload de áudio
+curl -X POST http://localhost:8000/api/v1/audio/project/<project_id>/upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@/caminho/para/ficheiro.mp3"
+
+# 5. Submeter geração
+curl -X POST http://localhost:8000/api/v1/generation \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "<id>", "audio_id": "<id>", "prompt": "melodic guitar solo", "instrument": "guitar", "genre": "rock", "duration": 30}'
+
+# 6. Verificar estado
+curl http://localhost:8000/api/v1/generation/<generation_id>/status \
+  -H "Authorization: Bearer <token>"
 ```
 
----
+## 8. OAuth Google — configuração necessária
 
-## 📝 Estrutura de Sessões (Múltiplos Terminais)
+1. Criar projeto em [Google Cloud Console](https://console.cloud.google.com/)
+2. Ativar "Google OAuth2 API"
+3. Criar credenciais OAuth 2.0 (tipo: Web Application)
+4. Adicionar URI autorizado: `http://localhost:8000/api/v1/users/auth/google/callback`
+5. Copiar Client ID e Client Secret para o `.env`
 
-Para desenvolvimento eficiente, usa múltiplos terminais:
+Ver `docs/OAUTH_SETUP.md` para instruções detalhadas.
 
-```
-Terminal 1: docker-compose up -d
-Terminal 2: uvicorn main:app --reload
-Terminal 3: celery -A app.worker worker --loglevel=info
-Terminal 4: celery -A app.worker flower (opcional)
-```
+## 9. Troubleshooting
 
----
+### "uvicorn is not recognized" (Windows PowerShell)
 
-## 🐛 Troubleshooting
-
-### ❌ "uvicorn is not recognized" (Windows PowerShell)
-**Solução:** Precisa ativar o ambiente virtual e instalar dependências:
 ```powershell
-cd backend/
+cd backend
 python -m venv venv
 venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r ..\docker\requirements.txt
 uvicorn main:app --reload
 ```
 
-**Nota:** Após ativar o venv, deves ver `(venv)` no início da linha de comando.
+Confirma que vês `(venv)` no início da linha.
 
-### ❌ "cannot be loaded because running scripts is disabled" (PowerShell)
-**Solução:** Executa isto uma vez:
+### "cannot be loaded because running scripts is disabled" (PowerShell)
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
-Depois tenta novamente: `venv\Scripts\Activate.ps1`
 
 ### Porta 8000 já em uso
-```bash
-# Encontra o processo
-lsof -i :8000
 
-# Mata o processo (Linux/Mac)
+```bash
+# Linux/Mac
+lsof -i :8000
 kill -9 <PID>
 
-# ou usa outra porta
+# Ou muda a porta
 uvicorn main:app --reload --port 8001
 ```
 
 ### PostgreSQL não conecta
+
 ```bash
-# Verifica status
-docker-compose ps postgres
-
-# Vê os logs
-docker-compose logs postgres
-
-# Reinicia
-docker-compose restart postgres
+docker compose ps postgres
+docker compose logs postgres
+docker compose restart postgres
 ```
 
 ### Redis não conecta
-```bash
-# Verifica status
-docker-compose ps redis
 
-# Vê os logs
-docker-compose logs redis
+```bash
+docker compose ps redis
+docker compose logs redis
 ```
 
----
+### Worker não processa tasks
 
-## 📚 Referências
+```bash
+# Verificar se o worker está a correr
+docker compose logs celery_worker
+
+# Verificar fila Redis
+docker compose exec redis redis-cli llen celery
+```
+
+## Referências
 
 - [README Principal](README.md)
 - [Backend Documentation](backend/README.md)
-- [Docker Configuration](docker/docker-compose.yml)
+- [Project Status](PROJECT_STATUS.md)
 - [OAuth Setup](docs/OAUTH_SETUP.md)
 - [Worker Integration](docs/INTEGRACAO_WORKER.md)
+- [Postman Queries](POSTMAN_QUERIES.md)

@@ -235,11 +235,18 @@ class GenerationQueries:
         audio_file_id: Optional[uuid.UUID],
         prompt: str,
         instrument: str,
-        genre: str,
-        duration: int,
-        tempo_override: Optional[int] = None
+        genre: Optional[str] = None,
+        duration: Optional[int] = None,
+        tempo_override: Optional[int] = None,
+        parent_generation_id: Optional[uuid.UUID] = None,
+        status: GenerationStatusEnum = GenerationStatusEnum.PENDING,
+        audio_file_path: Optional[str] = None,
     ) -> Generation:
-        """Create generation task record"""
+        """Create generation task record.
+
+        Para cortes (clips de uma geração) usa-se parent_generation_id +
+        status COMPLETED + audio_file_path já preenchido.
+        """
         generation = Generation(
             generation_id=generation_id,
             user_id=user_id,
@@ -249,8 +256,13 @@ class GenerationQueries:
             instrument=instrument,
             genre=genre,
             duration=duration,
-            tempo_override=tempo_override
+            tempo_override=tempo_override,
+            parent_generation_id=parent_generation_id,
+            status=status,
+            audio_file_path=audio_file_path,
         )
+        if status == GenerationStatusEnum.COMPLETED:
+            generation.completed_at = datetime.utcnow()
         db.add(generation)
         await db.commit()
         await db.refresh(generation)
@@ -262,6 +274,44 @@ class GenerationQueries:
         stmt = select(Generation).where(Generation.generation_id == generation_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_generation_by_uuid(db: AsyncSession, gen_uuid: uuid.UUID) -> Optional[Generation]:
+        """Get generation pela coluna PK id (UUID)."""
+        stmt = select(Generation).where(Generation.id == gen_uuid)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def list_generations_by_audio(
+        db: AsyncSession,
+        audio_file_id: uuid.UUID,
+        only_roots: bool = True,
+    ) -> List[Generation]:
+        """Lista gerações ligadas a um audio.
+
+        Por defeito devolve só as raízes (parent_generation_id IS NULL).
+        Os cortes lêem-se separadamente via list_cuts_of_generation.
+        """
+        stmt = select(Generation).where(Generation.audio_file_id == audio_file_id)
+        if only_roots:
+            stmt = stmt.where(Generation.parent_generation_id.is_(None))
+        stmt = stmt.order_by(Generation.created_at.desc())
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    @staticmethod
+    async def list_cuts_of_generation(
+        db: AsyncSession, parent_generation_uuid: uuid.UUID
+    ) -> List[Generation]:
+        """Lista os cortes (filhos) de uma geração."""
+        stmt = (
+            select(Generation)
+            .where(Generation.parent_generation_id == parent_generation_uuid)
+            .order_by(Generation.created_at.asc())
+        )
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
     @staticmethod
     async def get_project_generations(db: AsyncSession, project_id: uuid.UUID) -> List[Generation]:

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -54,6 +54,7 @@ class GenerationResponse(BaseModel):
     prompt: str
     instrument: Optional[str] = None
     genre: Optional[str] = None
+    parent_generation_id: Optional[uuid.UUID] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -64,6 +65,11 @@ class GenerationResult(BaseModel):
     """Full generation result — returned when polling for status/result."""
     generation_id: str
     status: str
+    project_id: Optional[uuid.UUID] = None
+    audio_file_id: Optional[uuid.UUID] = None
+    parent_generation_id: Optional[uuid.UUID] = None
+    prompt: Optional[str] = None
+    instrument: Optional[str] = None
     audio_file_path: Optional[str] = None
     midi_file_path: Optional[str] = None
     partitura_file_path: Optional[str] = None
@@ -74,3 +80,18 @@ class GenerationResult(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CutGenerationRequest(BaseModel):
+    """Pedido para cortar uma geração existente.
+
+    O backend valida fim_segundos - inicio_segundos <= 45.
+    """
+    inicio_segundos: float
+    fim_segundos: float
+
+
+class GenerationListResponse(BaseModel):
+    """Lista de gerações + cortes de cada uma. Devolvida pelo
+    GET /generation/by-audio/{audio_id} para o frontend desenhar a árvore."""
+    generations: List[GenerationResult]

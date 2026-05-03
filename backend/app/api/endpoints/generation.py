@@ -31,6 +31,8 @@ from app.domain.errors.generation_errors import (
     WorkerIndisponivel,
     FilaIndisponivel,
     FalhaProcessamentoAudio,
+    IntervaloCorteInvalido,
+    FicheiroGeracaoIndisponivel,
     GeneracaoErro,
 )
 from app.services.generation_service import GenerationService
@@ -39,6 +41,8 @@ from app.domain.dtos.endpoints.generation import (
     CoverGenerationRequest,
     GenerationResponse,
     GenerationResult,
+    GenerationListResponse,
+    CutGenerationRequest,
 )
 
 router = APIRouter()
@@ -90,6 +94,10 @@ def _handle_generation_error(erro: GeneracaoErro, instance: str) -> JSONResponse
         case FalhaProcessamentoAudio():
             return _problem_json(422, "erro-processamento-audio", "Erro de Processamento de Audio",
                 "Nao foi possivel processar o audio. Verifique se o ficheiro e valido.", instance)
+        case IntervaloCorteInvalido(detalhe=d):
+            return _problem_json(400, "intervalo-invalido", "Intervalo de Corte Invalido", d, instance)
+        case FicheiroGeracaoIndisponivel(detalhe=d):
+            return _problem_json(409, "ficheiro-indisponivel", "Ficheiro Indisponivel", d, instance)
         case _:
             return _problem_json(500, "erro-interno", "Erro Interno do Servidor",
                 "Ocorreu um erro inesperado no servico de geracao.", instance)
@@ -253,4 +261,133 @@ async def delete_generation(
         resultado,
         instance=f"/api/v1/generation/{generation_id}",
         success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
+    )
+
+
+# ===========================================================================
+# Hierarquia: gerações por áudio + cortes
+# ===========================================================================
+
+@router.get("/by-audio/{audio_id}", response_model=GenerationListResponse)
+async def list_generations_by_audio(
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Lista as gerações raiz (não cortes) associadas a um áudio."""
+    resultado = await GenerationService(db).list_generations_for_audio(audio_id, str(user_id))
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/by-audio/{audio_id}",
+        success_factory=lambda gens: GenerationListResponse(
+            generations=[GenerationResult.model_validate(g) for g in gens],
+        ),
+    )
+
+
+@router.get("/{generation_id}/cuts", response_model=GenerationListResponse)
+async def list_cuts_of_generation(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Lista os cortes (filhos) de uma geração."""
+    resultado = await GenerationService(db).list_cuts_for_generation(generation_id, str(user_id))
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/cuts",
+        success_factory=lambda cuts: GenerationListResponse(
+            generations=[GenerationResult.model_validate(c) for c in cuts],
+        ),
+    )
+
+
+@router.get("/{generation_id}/audio")
+async def get_generation_audio(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Stream do ficheiro de áudio físico de uma geração (ou corte)."""
+    resultado = await GenerationService(db).get_generation_audio_path(generation_id, str(user_id))
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/audio",
+        success_factory=lambda path: FileResponse(
+            path=str(path),
+            media_type="audio/mpeg" if str(path).lower().endswith(".mp3") else "audio/wav",
+            filename=path.name,
+        ),
+    )
+
+
+@router.post("/{generation_id}/cut", response_model=GenerationResult, status_code=status.HTTP_201_CREATED)
+async def cut_generation_endpoint(
+    generation_id: str,
+    request: CutGenerationRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Cria um "corte" — um novo registo generations com
+    parent_generation_id apontando para esta geração — entre
+    inicio_segundos e fim_segundos. Janela máxima: 45s.
+    """
+    resultado = await GenerationService(db).cut_generation(
+        parent_generation_id=generation_id,
+        user_id=str(user_id),
+        inicio_segundos=request.inicio_segundos,
+        fim_segundos=request.fim_segundos,
+        output_dir=str(AUDIO_OUTPUT_DIR),
+    )
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/cut",
+        success_factory=lambda cut: JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=GenerationResult.model_validate(cut).model_dump(mode="json"),
+        ),
+    )
+
+
+@router.post("/{generation_id}/partitura")
+async def generate_partitura_from_generation(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Gera partitura PDF a partir do áudio de uma geração (tipicamente
+    um corte). Devolve o PDF directamente."""
+    resultado = await GenerationService(db).generate_partitura_from_generation(
+        generation_id=generation_id,
+        user_id=str(user_id),
+        partitura_dir=str(PARTITURA_OUTPUT_DIR),
+    )
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/partitura",
+        success_factory=lambda pdf_path: FileResponse(
+            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+        ),
+    )
+
+
+@router.post("/{generation_id}/tablature")
+async def generate_tablature_from_generation(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Gera tablatura PDF a partir do áudio de uma geração (tipicamente
+    um corte). Devolve o PDF directamente."""
+    resultado = await GenerationService(db).generate_tablature_from_generation(
+        generation_id=generation_id,
+        user_id=str(user_id),
+        tablatura_dir=str(TABLATURA_OUTPUT_DIR),
+    )
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/tablature",
+        success_factory=lambda pdf_path: FileResponse(
+            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+        ),
     )

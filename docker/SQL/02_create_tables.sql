@@ -81,6 +81,10 @@ CREATE TABLE generations (
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     audio_file_id UUID REFERENCES audio_files(id) ON DELETE SET NULL,
 
+    -- Self-FK para suportar cortes derivados de uma geração original.
+    -- Ver hierarquia: Audio -> Generation (IA) -> Generation (corte).
+    parent_generation_id UUID REFERENCES generations(id) ON DELETE CASCADE,
+
     -- Generation parameters
     prompt TEXT NOT NULL,
     instrument VARCHAR(128),
@@ -125,3 +129,5 @@ CREATE INDEX idx_generations_status ON generations(status);
 CREATE INDEX idx_generations_generation_id ON generations(generation_id);
 CREATE INDEX idx_generations_created_at ON generations(created_at DESC);
 CREATE INDEX idx_generations_user_project ON generations(user_id, project_id);
+CREATE INDEX idx_generations_parent_id ON generations(parent_generation_id);
+CREATE INDEX idx_generations_audio_file_id ON generations(audio_file_id);

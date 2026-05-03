@@ -60,8 +60,12 @@ def _problem_json(status_code: int, type_slug: str, title: str, detail: str, ins
 def _handle_user_error(erro: UtilizadorErro, instance: str) -> JSONResponse:
     match erro:
         case UtilizadorNaoEncontrado():
-            return _problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
-                "O utilizador pedido nao foi encontrado.", instance)
+            # Em todos os endpoints /me o user_id vem do JWT. Se nao existe
+            # na BD (ex: BD foi recriada), o token e efectivamente invalido
+            # — devolvemos 401 para o frontend limpar o token e re-fazer login,
+            # em vez de 404 que faz o ProtectedRoute entrar em loop.
+            return _problem_json(401, "autenticacao-falhada", "Sessao Invalida",
+                "O utilizador associado a este token ja nao existe. Faz login novamente.", instance)
         case UsernameInvalido():
             return _problem_json(400, "requisicao-invalida", "Requisicao Invalida",
                 "O username nao pode estar vazio.", instance)

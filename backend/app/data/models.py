@@ -117,6 +117,14 @@ class Generation(Base):
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     audio_file_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id", ondelete="SET NULL"))
 
+    # Self-FK para "cortes" derivados de uma geração original.
+    # Hierarquia: AudioFile (upload) -> Generation (IA) -> Generation (corte).
+    parent_generation_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("generations.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
     # Generation parameters
     prompt = Column(Text, nullable=False)
     instrument = Column(String(128))
@@ -139,3 +147,9 @@ class Generation(Base):
     user = relationship("User", back_populates="generations")
     project = relationship("Project", back_populates="generations")
     audio_file = relationship("AudioFile", back_populates="generations")
+    parent = relationship(
+        "Generation",
+        remote_side="Generation.id",
+        foreign_keys="Generation.parent_generation_id",
+        backref="cuts",
+    )

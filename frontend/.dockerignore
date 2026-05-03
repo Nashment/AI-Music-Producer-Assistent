@@ -1,0 +1,24 @@
+# Nunca copiar para a imagem
+node_modules
+dist
+.vite
+.env
+.env.local
+.env.*.local
+
+# Git e dev tooling
+.git
+.gitignore
+.idea
+.vscode
+
+# Docker meta
+Dockerfile
+.dockerignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# Documentacao (mantemos so o README na raiz se for necessario)
+*.md

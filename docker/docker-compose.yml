@@ -118,6 +118,27 @@ services:
     deploy:
       replicas: 4
 
+  # Frontend (build estatico Vite + Nginx).
+  # O nginx serve /dist e faz proxy de /api/* para o backend (ver
+  # frontend/nginx.conf). Browser ve tudo em http://localhost:5173.
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: music_ai_frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    restart: unless-stopped
+    networks:
+      - music_ai_network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # Optional: pgAdmin for database management
   pgadmin:
     image: dpage/pgadmin4:latest
