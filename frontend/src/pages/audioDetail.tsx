@@ -81,8 +81,8 @@ function AudioDetailPage() {
     const selected: GenerationResult | null = useMemo(() => {
         if (!selectedId) return null;
         for (const root of gens.tree) {
-            if (root.generation_id === selectedId) return root;
-            const c = root.cuts.find(x => x.generation_id === selectedId);
+            if (root.id === selectedId) return root;
+            const c = root.cuts.find(x => x.id === selectedId);
             if (c) return c;
         }
         return null;
@@ -101,9 +101,9 @@ function AudioDetailPage() {
     const handleCut = async (params: { inicio_segundos: number; fim_segundos: number }) => {
         if (!selected) return;
         try {
-            const cut = await gens.cutGeneration(selected.generation_id, params);
+            const cut = await gens.cutGeneration(selected.id, params);
             toast.success('Corte criado.');
-            setSelectedId(cut.generation_id);
+            setSelectedId(cut.id);
         } catch (err) {
             toast.error(describeError(err, 'Erro a cortar.'));
         }
@@ -130,7 +130,7 @@ function AudioDetailPage() {
     return (
         <div className="audio-detail-v2">
             <PageHeader
-                title={basename(audio.file_path)}
+                title={basename(audio.storage_key)}
                 description={`${fmtDuration(audio.duration)} · ${audio.sample_rate} Hz`}
                 backTo={`/projects/${projectId}`}
                 backLabel="Projeto"
@@ -162,7 +162,7 @@ function AudioDetailPage() {
                             <dt>Compasso</dt>
                             <dd>{audio.time_signature ?? '—'}</dd>
                         </dl>
-                        <AudioPlayer audioId={audio.id} fileName={basename(audio.file_path)} />
+                        <AudioPlayer audioId={audio.id} fileName={basename(audio.storage_key)} />
                     </section>
 
                     <section className="card audio-tree-card">
@@ -174,7 +174,7 @@ function AudioDetailPage() {
                         <GenerationTree
                             tree={gens.tree}
                             selectedId={selectedId}
-                            onSelect={g => setSelectedId(g.generation_id)}
+                            onSelect={g => setSelectedId(g.id)}
                         />
                         {selectedId ? (
                             <button

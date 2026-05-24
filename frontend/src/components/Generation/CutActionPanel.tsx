@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { generationService } from '../../services/generation/generationService';
 import { GenerationResult } from '../../services/generation/generationResponseTypes';
 import Spinner from '../Layout/Spinner';
@@ -21,24 +21,39 @@ export function CutActionPanel({ cut, onError }: Props) {
     const [loadingPart, setLoadingPart] = useState(false);
     const [loadingTab, setLoadingTab] = useState(false);
 
-    // Liberta blob URLs ao desmontar / mudar de corte
+    // Refs mantêm sempre os valores actuais — essencial para os cleanups
+    // de useEffect não usarem closures com valores antigos.
+    const partituraUrlRef = useRef<string | null>(null);
+    const tabUrlRef = useRef<string | null>(null);
+    partituraUrlRef.current = partituraUrl;
+    tabUrlRef.current = tabUrl;
+
+    // Revoga os blob URLs apenas ao desmontar o componente.
+    // NÃO colocar [partituraUrl, tabUrl] como deps: se tabUrl mudar e
+    // o cleanup correr com partituraUrl ainda válido, o blob da partitura
+    // seria revogado enquanto o utilizador ainda podia estar a fazer download.
     useEffect(() => {
         return () => {
-            if (partituraUrl) URL.revokeObjectURL(partituraUrl);
-            if (tabUrl) URL.revokeObjectURL(tabUrl);
+            if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
+            if (tabUrlRef.current) URL.revokeObjectURL(tabUrlRef.current);
         };
-    }, [partituraUrl, tabUrl]);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Quando se muda para outro corte, limpamos os PDFs antigos
+    // Quando se muda para outro corte, revogamos os blobs antigos e limpamos.
     useEffect(() => {
-        setPartituraUrl(null);
-        setTabUrl(null);
-    }, [cut.generation_id]);
+        return () => {
+            if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
+            if (tabUrlRef.current) URL.revokeObjectURL(tabUrlRef.current);
+            setPartituraUrl(null);
+            setTabUrl(null);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cut.id]);
 
     const handlePartitura = async () => {
         setLoadingPart(true);
         try {
-            const url = await generationService.generatePartituraFromGeneration(cut.generation_id);
+            const url = await generationService.generatePartituraFromGeneration(cut.id);
             setPartituraUrl(url);
         } catch (e: any) {
             onError(e?.detail ?? 'Erro a gerar partitura.');
@@ -50,7 +65,7 @@ export function CutActionPanel({ cut, onError }: Props) {
     const handleTablature = async () => {
         setLoadingTab(true);
         try {
-            const url = await generationService.generateTablatureFromGeneration(cut.generation_id);
+            const url = await generationService.generateTablatureFromGeneration(cut.id);
             setTabUrl(url);
         } catch (e: any) {
             onError(e?.detail ?? 'Erro a gerar tablatura.');
@@ -99,7 +114,7 @@ export function CutActionPanel({ cut, onError }: Props) {
                 <section className="cut-action-pdf">
                     <header className="cut-action-pdf-head">
                         <strong>Partitura</strong>
-                        <a href={partituraUrl} download={`partitura_${cut.generation_id.slice(0, 8)}.pdf`}>
+                        <a href={partituraUrl} download={`partitura_${cut.id.slice(0, 8)}.pdf`}>
                             ⬇ Download
                         </a>
                     </header>
@@ -111,7 +126,7 @@ export function CutActionPanel({ cut, onError }: Props) {
                 <section className="cut-action-pdf">
                     <header className="cut-action-pdf-head">
                         <strong>Tablatura</strong>
-                        <a href={tabUrl} download={`tablatura_${cut.generation_id.slice(0, 8)}.pdf`}>
+                        <a href={tabUrl} download={`tablatura_${cut.id.slice(0, 8)}.pdf`}>
                             ⬇ Download
                         </a>
                     </header>

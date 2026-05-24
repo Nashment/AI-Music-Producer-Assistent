@@ -40,7 +40,7 @@ function GenerationCreationPage() {
                     submitting={gen.submitting}
                     onSubmit={async req => {
                         const r = await gen.submitGeneration(req);
-                        setSubmittedId(r.generation_id);
+                        setSubmittedId(r.id);
                     }}
                 />
             ) : (
@@ -52,14 +52,14 @@ function GenerationCreationPage() {
                         <p className="error-text">{status.error_message}</p>
                     ) : null}
 
-                    {status?.audio_file_path ? (
-                        <p>Audio gerado: {status.audio_file_path}</p>
+                    {status?.audio_storage_key ? (
+                        <p>Audio gerado: {status.audio_storage_key}</p>
                     ) : null}
-                    {status?.partitura_file_path ? (
-                        <p>Partitura: {status.partitura_file_path}</p>
+                    {status?.partitura_storage_key ? (
+                        <p>Partitura: {status.partitura_storage_key}</p>
                     ) : null}
-                    {status?.tablatura_file_path ? (
-                        <p>Tablatura: {status.tablatura_file_path}</p>
+                    {status?.tablatura_storage_key ? (
+                        <p>Tablatura: {status.tablatura_storage_key}</p>
                     ) : null}
 
                     <button

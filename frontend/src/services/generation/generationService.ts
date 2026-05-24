@@ -1,6 +1,4 @@
 import { request } from '../request';
-import { BASE_URL } from '../../utils/common';
-import { getAccessToken } from '../../utils/auth';
 import {
     GenerationRequest,
     CoverGenerationRequest,
@@ -77,14 +75,17 @@ export const generationService = {
         return data.generations;
     },
 
-    /** Devolve um Blob URL para reproduzir/visualizar o áudio da geração. */
+    /** Devolve um Blob URL para reproduzir/visualizar o áudio da geração.
+     *
+     * Fluxo em dois passos: o backend devolve a presigned URL (autenticado com JWT);
+     * o segundo fetch vai directamente ao R2 sem header Authorization para evitar
+     * o conflito de autenticacao dupla que o R2 rejeita.
+     */
     async fetchGenerationAudioBlobUrl(generationId: string): Promise<string> {
-        const token = getAccessToken();
-        const res = await fetch(`${BASE_URL}/generation/${generationId}/audio`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error('Não foi possível obter o áudio da geração.');
-        const blob = await res.blob();
+        const { url } = await request(`/generation/${generationId}/audio`, { method: 'GET' }).then(r => r.json());
+        const audioRes = await fetch(url);
+        if (!audioRes.ok) throw new Error('Não foi possível obter o áudio da geração.');
+        const blob = await audioRes.blob();
         return URL.createObjectURL(blob);
     },
 

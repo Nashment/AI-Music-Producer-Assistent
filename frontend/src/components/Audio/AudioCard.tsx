@@ -27,8 +27,8 @@ export function AudioCard({ projectId, audio, onDelete }: Props) {
             >
                 <header className="audio-card-head">
                     <span className="audio-card-icon">🎵</span>
-                    <h4 title={basename(audio.file_path)}>
-                        {basename(audio.file_path)}
+                    <h4 title={basename(audio.storage_key)}>
+                        {basename(audio.storage_key)}
                     </h4>
                 </header>
                 <ul className="audio-card-meta">

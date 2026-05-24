@@ -45,9 +45,9 @@ export function GenerationTree({ tree, selectedId, onSelect }: Props) {
         <ul className="gen-tree">
             {tree.map(gen => {
                 const badge = statusBadge(gen.status);
-                const isSel = selectedId === gen.generation_id;
+                const isSel = selectedId === gen.id;
                 return (
-                    <li key={gen.generation_id} className="gen-tree-root">
+                    <li key={gen.id} className="gen-tree-root">
                         <button
                             type="button"
                             className={`gen-tree-item ${isSel ? 'is-selected' : ''}`}
@@ -69,9 +69,9 @@ export function GenerationTree({ tree, selectedId, onSelect }: Props) {
                             <ul className="gen-tree-children">
                                 {gen.cuts.map(cut => {
                                     const cutBadge = statusBadge(cut.status);
-                                    const isCutSel = selectedId === cut.generation_id;
+                                    const isCutSel = selectedId === cut.id;
                                     return (
-                                        <li key={cut.generation_id}>
+                                        <li key={cut.id}>
                                             <button
                                                 type="button"
                                                 className={`gen-tree-item gen-tree-item-cut ${isCutSel ? 'is-selected' : ''}`}

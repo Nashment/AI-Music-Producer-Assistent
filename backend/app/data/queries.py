@@ -16,14 +16,7 @@ class UserQueries:
 
     @staticmethod
     async def create_user(db: AsyncSession, username: str, oauth_provider: OAuthProvider, oauth_id: str) -> User:
-        """
-        Create new user record (OAuth strictly)
-        """
-        user = User(
-            username=username,
-            oauth_provider=oauth_provider,
-            oauth_id=oauth_id
-        )
+        user = User(username=username, oauth_provider=oauth_provider, oauth_id=oauth_id)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -31,35 +24,24 @@ class UserQueries:
 
     @staticmethod
     async def get_user_by_oauth(db: AsyncSession, oauth_provider: OAuthProvider, oauth_id: str) -> Optional[User]:
-        """
-        Get user by their OAuth provider and ID (Substitui o antigo get_by_email)
-        """
-        stmt = select(User).where(
-            User.oauth_provider == oauth_provider,
-            User.oauth_id == oauth_id
-        )
+        stmt = select(User).where(User.oauth_provider == oauth_provider, User.oauth_id == oauth_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
-        """
-        Get user by public username
-        """
         stmt = select(User).where(User.username == username)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
-        """Get user by UUID"""
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def update_user(db: AsyncSession, user_id: uuid.UUID, **kwargs) -> Optional[User]:
-        """Update user fields"""
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
@@ -73,7 +55,6 @@ class UserQueries:
 
     @staticmethod
     async def delete_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
-        """Delete user"""
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
@@ -89,7 +70,6 @@ class ProjectQueries:
 
     @staticmethod
     async def create_project(db: AsyncSession, user_id: uuid.UUID, title: str, description: str, tempo: int) -> Project:
-        """Create new project"""
         project = Project(user_id=user_id, title=title, description=description, tempo=tempo)
         db.add(project)
         await db.commit()
@@ -98,21 +78,18 @@ class ProjectQueries:
 
     @staticmethod
     async def get_project(db: AsyncSession, project_id: uuid.UUID) -> Optional[Project]:
-        """Get project by UUID"""
         stmt = select(Project).where(Project.id == project_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def get_user_projects(db: AsyncSession, user_id: uuid.UUID) -> List[Project]:
-        """Get all projects for user"""
         stmt = select(Project).where(Project.user_id == user_id).order_by(Project.created_at.desc())
         result = await db.execute(stmt)
         return result.scalars().all()
 
     @staticmethod
     async def update_project(db: AsyncSession, project_id: uuid.UUID, **kwargs) -> Optional[Project]:
-        """Update project fields"""
         stmt = select(Project).where(Project.id == project_id)
         result = await db.execute(stmt)
         project = result.scalar_one_or_none()
@@ -126,7 +103,6 @@ class ProjectQueries:
 
     @staticmethod
     async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> bool:
-        """Delete project"""
         stmt = select(Project).where(Project.id == project_id)
         result = await db.execute(stmt)
         project = result.scalar_one_or_none()
@@ -145,44 +121,40 @@ class AudioQueries:
         db: AsyncSession,
         user_id: uuid.UUID,
         project_id: uuid.UUID,
-        file_path: str,
+        storage_key: str,
         file_size: int,
         duration: float,
         sample_rate: int,
         bpm: Optional[int] = None,
         key: Optional[str] = None,
         time_signature: Optional[str] = None,
-        parent_audio_id: Optional[uuid.UUID] = None
+        parent_audio_id: Optional[uuid.UUID] = None,
     ) -> AudioFile:
-        """Create audio file record"""
         audio = AudioFile(
             user_id=user_id,
             project_id=project_id,
-            file_path=file_path,
+            storage_key=storage_key,
             file_size=file_size,
             duration=duration,
             sample_rate=sample_rate,
             bpm=bpm,
             key=key,
             time_signature=time_signature,
-            parent_audio_id=parent_audio_id
+            parent_audio_id=parent_audio_id,
         )
         db.add(audio)
         await db.commit()
-        # Force refresh to retrieve the generated UUID from database
-        await db.refresh(audio, attribute_names=['id'])
+        await db.refresh(audio, attribute_names=["id"])
         return audio
 
     @staticmethod
     async def get_audio_file(db: AsyncSession, audio_id: uuid.UUID) -> Optional[AudioFile]:
-        """Get audio file by UUID"""
         stmt = select(AudioFile).where(AudioFile.id == audio_id)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
     @staticmethod
     async def get_project_audio_files(db: AsyncSession, project_id: uuid.UUID) -> List[AudioFile]:
-        """Get all audio files in project"""
         stmt = select(AudioFile).where(AudioFile.project_id == project_id)
         result = await db.execute(stmt)
         return result.scalars().all()
@@ -193,9 +165,8 @@ class AudioQueries:
         audio_id: uuid.UUID,
         bpm: Optional[int] = None,
         key: Optional[str] = None,
-        time_signature: Optional[str] = None
+        time_signature: Optional[str] = None,
     ) -> Optional[AudioFile]:
-        """Update audio analysis results"""
         stmt = select(AudioFile).where(AudioFile.id == audio_id)
         result = await db.execute(stmt)
         audio = result.scalar_one_or_none()
@@ -212,7 +183,6 @@ class AudioQueries:
 
     @staticmethod
     async def delete_audio_file(db: AsyncSession, audio_id: uuid.UUID) -> bool:
-        """Delete audio file"""
         stmt = select(AudioFile).where(AudioFile.id == audio_id)
         result = await db.execute(stmt)
         audio = result.scalar_one_or_none()
@@ -229,26 +199,26 @@ class GenerationQueries:
     @staticmethod
     async def create_generation(
         db: AsyncSession,
-        generation_id: str,
         user_id: uuid.UUID,
         project_id: uuid.UUID,
         audio_file_id: Optional[uuid.UUID],
         prompt: str,
         instrument: str,
+        gen_id: Optional[uuid.UUID] = None,
         genre: Optional[str] = None,
         duration: Optional[int] = None,
         tempo_override: Optional[int] = None,
         parent_generation_id: Optional[uuid.UUID] = None,
         status: GenerationStatusEnum = GenerationStatusEnum.PENDING,
-        audio_file_path: Optional[str] = None,
+        audio_storage_key: Optional[str] = None,
     ) -> Generation:
-        """Create generation task record.
+        """Cria um registo de geracao.
 
-        Para cortes (clips de uma geração) usa-se parent_generation_id +
-        status COMPLETED + audio_file_path já preenchido.
+        gen_id permite pre-definir o UUID (util para Celery tasks que precisam
+        do id antes de fazer o commit).  Se omitido, a DB gera automaticamente.
         """
         generation = Generation(
-            generation_id=generation_id,
+            id=gen_id or uuid.uuid4(),
             user_id=user_id,
             project_id=project_id,
             audio_file_id=audio_file_id,
@@ -259,7 +229,7 @@ class GenerationQueries:
             tempo_override=tempo_override,
             parent_generation_id=parent_generation_id,
             status=status,
-            audio_file_path=audio_file_path,
+            audio_storage_key=audio_storage_key,
         )
         if status == GenerationStatusEnum.COMPLETED:
             generation.completed_at = datetime.utcnow()
@@ -270,14 +240,11 @@ class GenerationQueries:
 
     @staticmethod
     async def get_generation(db: AsyncSession, generation_id: str) -> Optional[Generation]:
-        """Get generation by its specific generation_id"""
-        stmt = select(Generation).where(Generation.generation_id == generation_id)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    @staticmethod
-    async def get_generation_by_uuid(db: AsyncSession, gen_uuid: uuid.UUID) -> Optional[Generation]:
-        """Get generation pela coluna PK id (UUID)."""
+        """Obtem uma geracao pelo seu UUID (aceita string ou UUID)."""
+        try:
+            gen_uuid = uuid.UUID(str(generation_id))
+        except (ValueError, AttributeError):
+            return None
         stmt = select(Generation).where(Generation.id == gen_uuid)
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
@@ -288,11 +255,6 @@ class GenerationQueries:
         audio_file_id: uuid.UUID,
         only_roots: bool = True,
     ) -> List[Generation]:
-        """Lista gerações ligadas a um audio.
-
-        Por defeito devolve só as raízes (parent_generation_id IS NULL).
-        Os cortes lêem-se separadamente via list_cuts_of_generation.
-        """
         stmt = select(Generation).where(Generation.audio_file_id == audio_file_id)
         if only_roots:
             stmt = stmt.where(Generation.parent_generation_id.is_(None))
@@ -304,7 +266,6 @@ class GenerationQueries:
     async def list_cuts_of_generation(
         db: AsyncSession, parent_generation_uuid: uuid.UUID
     ) -> List[Generation]:
-        """Lista os cortes (filhos) de uma geração."""
         stmt = (
             select(Generation)
             .where(Generation.parent_generation_id == parent_generation_uuid)
@@ -315,7 +276,6 @@ class GenerationQueries:
 
     @staticmethod
     async def get_project_generations(db: AsyncSession, project_id: uuid.UUID) -> List[Generation]:
-        """Get all generations in project"""
         stmt = select(Generation).where(
             Generation.project_id == project_id
         ).order_by(Generation.created_at.desc())
@@ -327,26 +287,30 @@ class GenerationQueries:
         db: AsyncSession,
         generation_id: str,
         status: GenerationStatusEnum,
-        audio_path: Optional[str] = None,
-        midi_path: Optional[str] = None,
-        partitura_path: Optional[str] = None,
-        tablatura_path: Optional[str] = None,
-        error_message: Optional[str] = None
+        audio_key: Optional[str] = None,
+        midi_key: Optional[str] = None,
+        partitura_key: Optional[str] = None,
+        tablatura_key: Optional[str] = None,
+        error_message: Optional[str] = None,
     ) -> Optional[Generation]:
-        """Update generation status and results"""
-        stmt = select(Generation).where(Generation.generation_id == generation_id)
+        """Atualiza o estado e as chaves R2 de uma geracao."""
+        try:
+            gen_uuid = uuid.UUID(str(generation_id))
+        except (ValueError, AttributeError):
+            return None
+        stmt = select(Generation).where(Generation.id == gen_uuid)
         result = await db.execute(stmt)
         generation = result.scalar_one_or_none()
         if generation:
             generation.status = status
-            if audio_path:
-                generation.audio_file_path = audio_path
-            if midi_path:
-                generation.midi_file_path = midi_path
-            if partitura_path:
-                generation.partitura_file_path = partitura_path
-            if tablatura_path:
-                generation.tablatura_file_path = tablatura_path
+            if audio_key:
+                generation.audio_storage_key = audio_key
+            if midi_key:
+                generation.midi_storage_key = midi_key
+            if partitura_key:
+                generation.partitura_storage_key = partitura_key
+            if tablatura_key:
+                generation.tablatura_storage_key = tablatura_key
             if error_message:
                 generation.error_message = error_message
             if status == GenerationStatusEnum.COMPLETED:
@@ -357,8 +321,12 @@ class GenerationQueries:
 
     @staticmethod
     async def delete_generation(db: AsyncSession, generation_id: str) -> bool:
-        """Delete generation"""
-        stmt = select(Generation).where(Generation.generation_id == generation_id)
+        """Apaga uma geracao pelo seu UUID."""
+        try:
+            gen_uuid = uuid.UUID(str(generation_id))
+        except (ValueError, AttributeError):
+            return False
+        stmt = select(Generation).where(Generation.id == gen_uuid)
         result = await db.execute(stmt)
         generation = result.scalar_one_or_none()
         if generation:

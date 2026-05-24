@@ -1,0 +1,42 @@
+# ============================================================
+#  requirements-api.txt — dependencias do backend FastAPI
+#  Nao inclui PyTorch/Demucs/basic-pitch (apenas no worker).
+# ============================================================
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+
+# Data Validation
+pydantic[email]==2.5.0
+
+# Authentication & Security
+PyJWT==2.8.0
+cryptography==41.0.7
+
+# HTTP client (OAuth, Suno API)
+httpx==0.25.2
+requests==2.31.0
+
+# Async Tasks (broker client only — worker tem o celery completo)
+celery==5.3.4
+redis==5.0.1
+
+# Audio analysis (necessario no backend para analisar audio no upload)
+# PyTorch/Demucs/basic-pitch continuam apenas no worker
+librosa==0.10.0
+numpy==1.25.2
+scipy==1.11.4
+soundfile==0.12.1
+pydub==0.25.1
+
+# Utilities
+python-multipart==0.0.6
+python-dotenv==1.0.0
+
+# Cloud Storage (Cloudflare R2)
+boto3==1.34.0

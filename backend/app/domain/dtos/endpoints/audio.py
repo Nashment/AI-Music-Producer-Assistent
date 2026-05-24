@@ -9,7 +9,7 @@ class AudioAnalysisResponse(BaseModel):
 
     id: uuid.UUID
     project_id: uuid.UUID
-    file_path: str
+    storage_key: str
     duration: float
     sample_rate: int
     bpm: Optional[int] = None

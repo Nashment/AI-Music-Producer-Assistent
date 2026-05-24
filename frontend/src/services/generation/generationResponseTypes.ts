@@ -24,7 +24,7 @@ export type CoverGenerationRequest = GenerationRequest & {
 };
 
 export type GenerationResponse = {
-    generation_id: string;
+    id: string;
     status: GenerationStatus;
     project_id: string;
     prompt: string;
@@ -35,17 +35,17 @@ export type GenerationResponse = {
 };
 
 export type GenerationResult = {
-    generation_id: string;
+    id: string;
     status: GenerationStatus;
     project_id?: string | null;
     audio_file_id?: string | null;
     parent_generation_id?: string | null;
     prompt?: string | null;
     instrument?: string | null;
-    audio_file_path?: string | null;
-    midi_file_path?: string | null;
-    partitura_file_path?: string | null;
-    tablatura_file_path?: string | null;
+    audio_storage_key?: string | null;
+    midi_storage_key?: string | null;
+    partitura_storage_key?: string | null;
+    tablatura_storage_key?: string | null;
     error_message?: string | null;
     created_at?: string | null;
     completed_at?: string | null;

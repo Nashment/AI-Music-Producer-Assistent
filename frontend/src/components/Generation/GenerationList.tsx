@@ -14,7 +14,7 @@ export function GenerationList({ generations, onDelete }: Props) {
         <div className="generation-list">
             {generations.map(g => (
                 <GenerationCard
-                    key={g.generation_id}
+                    key={g.id}
                     generation={g}
                     onDelete={onDelete}
                 />

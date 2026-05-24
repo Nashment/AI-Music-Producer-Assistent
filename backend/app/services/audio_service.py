@@ -1,13 +1,11 @@
 """
 Audio Service - Audio processing and analysis business logic
-
-Os metodos deste servico devolvem Resultado[AudioErro, T] em vez de
-lancar excecoes. A traducao para HTTP fica exclusivamente no endpoint.
 """
 
 import os
 import shutil
 import uuid
+import tempfile
 from pathlib import Path
 
 from app.data import ProjectQueries
@@ -23,7 +21,13 @@ from app.domain.errors.audio_errors import (
     FalhaProcessamento,
     IntervaloInvalido,
 )
-from worker.audio_utils.audio_analyzer import analisar_audio_completo
+from app.services.storage_service import storage
+
+try:
+    from worker.audio_utils.audio_analyzer import analisar_audio_completo
+except ImportError as e:
+    print(f"Warning: Could not import audio_analyzer: {e}")
+    analisar_audio_completo = None
 
 try:
     from worker.audio_utils.ajuste_bpm import ajustar_bpm_automatico
@@ -36,6 +40,11 @@ except ImportError as e:
     extrair_instrumento = None
 
 
+def _make_audio_key(filename: str) -> str:
+    """Gera uma chave R2 unica para um ficheiro de audio de utilizador."""
+    return f"audio/{uuid.uuid4()}_{Path(filename).name}"
+
+
 class AudioService:
     def __init__(self, db_session):
         self.db = db_session
@@ -45,7 +54,6 @@ class AudioService:
     # ------------------------------------------------------------------
 
     async def get_project_audios(self, project_id: uuid.UUID, user_id: str) -> Resultado:
-        """Lista todos os audios de um projeto, verificando autorizacao."""
         project = await ProjectQueries.get_project(db=self.db, project_id=project_id)
         if not project or str(project.user_id) != user_id:
             return Falha(ProjetoNaoEncontrado(project_id=project_id))
@@ -58,7 +66,9 @@ class AudioService:
         user_id: str,
         project_id: str,
     ) -> Resultado:
-        """Valida, analisa e persiste um ficheiro de audio enviado pelo utilizador."""
+        if analisar_audio_completo is None:
+            return Falha(ModuloAudioIndisponivel(modulo="audio_analyzer"))
+
         valid_extensions = {'.mp3', '.wav'}
         _, ext = os.path.splitext(file_path.lower())
 
@@ -75,11 +85,16 @@ class AudioService:
         try:
             analysis_result = analisar_audio_completo(file_path)
 
+            s3_key = _make_audio_key(Path(file_path).name)
+            uploaded = storage.upload_file(file_path, s3_key)
+            if not uploaded:
+                return Falha(FalhaProcessamento(operacao="upload_r2"))
+
             audio_record = await AudioQueries.create_audio_file(
                 db=self.db,
                 user_id=user_id,
                 project_id=uuid.UUID(project_id),
-                file_path=file_path,
+                storage_key=s3_key,
                 file_size=file_size,
                 duration=analysis_result.get("duration", 0.0),
                 sample_rate=analysis_result.get("sample_rate", 44100),
@@ -88,6 +103,12 @@ class AudioService:
                 time_signature=analysis_result.get("time_signature"),
             )
             audio_record.chords = analysis_result.get("chords", [])
+
+            try:
+                Path(file_path).unlink(missing_ok=True)
+            except Exception as e:
+                print(f"Aviso: nao foi possivel apagar ficheiro local apos upload: {e}")
+
             return Sucesso(audio_record)
 
         except Exception as e:
@@ -95,44 +116,35 @@ class AudioService:
             return Falha(FalhaProcessamento(operacao="analise_audio"))
 
     # ------------------------------------------------------------------
-    # Leitura
+    # Leitura / Download
     # ------------------------------------------------------------------
 
     async def get_audio(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
-        """Obtem o registo e verifica o dono. Nao distingue nao-existe de nao-e-teu."""
         record = await AudioQueries.get_audio_file(db=self.db, audio_id=audio_id)
         if not record or str(record.user_id) != user_id:
             return Falha(AudioNaoEncontrado(audio_id=audio_id))
         return Sucesso(record)
 
-    async def get_audio_for_download(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
-        """Obtem o registo e confirma que o ficheiro fisico existe em disco."""
+    async def get_audio_download_url(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
         resultado = await self.get_audio(audio_id, user_id)
         if isinstance(resultado, Falha):
             return resultado
         record = resultado.valor
-        if not Path(record.file_path).exists():
+        url = storage.get_presigned_url(record.storage_key)
+        if not url:
             return Falha(FicheiroFisicoNaoEncontrado(audio_id=audio_id))
-        return Sucesso(record)
+        return Sucesso(url)
 
     # ------------------------------------------------------------------
     # Eliminacao
     # ------------------------------------------------------------------
 
     async def delete_audio(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
-        """Apaga o ficheiro do disco e o registo da base de dados."""
         resultado = await self.get_audio(audio_id, user_id)
         if isinstance(resultado, Falha):
             return resultado
         record = resultado.valor
-
-        file_path = Path(record.file_path)
-        if file_path.exists():
-            try:
-                file_path.unlink()
-            except Exception as e:
-                print(f"Aviso: nao foi possivel apagar o ficheiro fisico: {e}")
-
+        storage.delete_file(record.storage_key)
         await AudioQueries.delete_audio_file(db=self.db, audio_id=audio_id)
         return Sucesso(None)
 
@@ -143,7 +155,6 @@ class AudioService:
     async def adjust_bpm(
         self, audio_id: uuid.UUID, user_id: str, target_bpm: float, upload_dir: str
     ) -> Resultado:
-        """Ajusta o BPM e substitui o ficheiro original."""
         if not ajustar_bpm_automatico:
             return Falha(ModuloAudioIndisponivel(modulo="ajuste_bpm"))
 
@@ -152,21 +163,25 @@ class AudioService:
             return resultado
         record = resultado.valor
 
-        input_path = Path(record.file_path)
-        if not input_path.exists():
-            return Falha(FicheiroFisicoNaoEncontrado(audio_id=audio_id))
-
-        temp_path = Path(upload_dir) / f"{uuid.uuid4()}_bpm_temp.wav"
         try:
-            ajustar_bpm_automatico(str(input_path), str(temp_path), target_bpm)
-            shutil.move(str(temp_path), str(input_path))
-            updated = await AudioQueries.update_audio_analysis(
-                db=self.db, audio_id=audio_id, bpm=int(target_bpm)
-            )
-            return Sucesso(updated)
+            with storage.temp_download(record.storage_key) as input_path:
+                temp_out = Path(tempfile.mktemp(suffix=".wav"))
+                try:
+                    ajustar_bpm_automatico(str(input_path), str(temp_out), target_bpm)
+                    if not temp_out.exists():
+                        return Falha(FalhaProcessamento(operacao="ajuste_bpm"))
+
+                    uploaded = storage.upload_file(str(temp_out), record.storage_key)
+                    if not uploaded:
+                        return Falha(FalhaProcessamento(operacao="upload_r2_bpm"))
+
+                    updated = await AudioQueries.update_audio_analysis(
+                        db=self.db, audio_id=audio_id, bpm=int(target_bpm)
+                    )
+                    return Sucesso(updated)
+                finally:
+                    temp_out.unlink(missing_ok=True)
         except Exception:
-            if temp_path.exists():
-                temp_path.unlink()
             return Falha(FalhaProcessamento(operacao="ajuste_bpm"))
 
     async def cut_audio_file(
@@ -177,7 +192,6 @@ class AudioService:
         fim_segundos: float,
         upload_dir: str,
     ) -> Resultado:
-        """Corta o audio e guarda como novo registo ligado ao original."""
         if not cortar_audio:
             return Falha(ModuloAudioIndisponivel(modulo="corte_audio"))
 
@@ -191,28 +205,34 @@ class AudioService:
             return resultado
         record = resultado.valor
 
-        input_path = Path(record.file_path)
-        if not input_path.exists():
-            return Falha(FicheiroFisicoNaoEncontrado(audio_id=audio_id))
-
         original_duration = record.duration or 0.0
         if inicio_segundos >= original_duration:
             return Falha(IntervaloInvalido(
                 detalhe=f"Tempo de inicio ({inicio_segundos}s) maior ou igual a duracao ({original_duration:.2f}s)."
             ))
 
-        actual_end      = min(fim_segundos, original_duration)
+        actual_end = min(fim_segundos, original_duration)
         actual_duration = actual_end - inicio_segundos
-        output_path     = Path(upload_dir) / f"{uuid.uuid4()}_cut_{inicio_segundos}s_{actual_end}s.wav"
 
+        output_tmp = Path(tempfile.mktemp(suffix=".wav"))
         try:
-            cortar_audio(str(input_path), str(output_path), inicio_segundos, actual_end)
+            with storage.temp_download(record.storage_key) as input_path:
+                cortar_audio(str(input_path), str(output_tmp), inicio_segundos, actual_end)
+
+            if not output_tmp.exists():
+                return Falha(FalhaProcessamento(operacao="corte_audio"))
+
+            cut_key = f"audio/{uuid.uuid4()}_cut_{inicio_segundos}s_{actual_end}s.wav"
+            uploaded = storage.upload_file(str(output_tmp), cut_key)
+            if not uploaded:
+                return Falha(FalhaProcessamento(operacao="upload_r2_cut"))
+
             new_record = await AudioQueries.create_audio_file(
                 db=self.db,
                 user_id=user_id,
                 project_id=record.project_id,
-                file_path=str(output_path),
-                file_size=output_path.stat().st_size,
+                storage_key=cut_key,
+                file_size=output_tmp.stat().st_size,
                 duration=round(actual_duration, 3),
                 sample_rate=record.sample_rate,
                 bpm=record.bpm,
@@ -222,14 +242,13 @@ class AudioService:
             )
             return Sucesso(new_record)
         except Exception:
-            if output_path.exists():
-                output_path.unlink()
             return Falha(FalhaProcessamento(operacao="corte_audio"))
+        finally:
+            output_tmp.unlink(missing_ok=True)
 
     async def separate_tracks(
         self, audio_id: uuid.UUID, user_id: str, instrument: str, upload_dir: str
     ) -> Resultado:
-        """Separa a faixa do instrumento e devolve o caminho do ficheiro gerado."""
         if not extrair_instrumento:
             return Falha(ModuloAudioIndisponivel(modulo="separador_faixas"))
 
@@ -238,17 +257,25 @@ class AudioService:
             return resultado
         record = resultado.valor
 
-        input_path = Path(record.file_path)
-        if not input_path.exists():
-            return Falha(FicheiroFisicoNaoEncontrado(audio_id=audio_id))
-
         instrument_normalized = instrument.lower().strip()
-        output_path = Path(upload_dir) / f"{input_path.stem}_{instrument_normalized}.wav"
 
-        try:
-            extrair_instrumento(str(input_path), instrument, upload_dir)
-            if not output_path.exists():
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_dir_path = Path(tmp_dir)
+            local_input = tmp_dir_path / Path(record.storage_key).name
+
+            ok = storage.download_file(record.storage_key, str(local_input))
+            if not ok:
+                return Falha(FicheiroFisicoNaoEncontrado(audio_id=audio_id))
+
+            output_path = tmp_dir_path / f"{local_input.stem}_{instrument_normalized}.wav"
+
+            try:
+                extrair_instrumento(str(local_input), instrument, str(tmp_dir_path))
+                if not output_path.exists():
+                    return Falha(FalhaProcessamento(operacao="separacao_faixas"))
+
+                final_output = Path(tempfile.mktemp(suffix=f"_{instrument_normalized}.wav"))
+                shutil.copy2(str(output_path), str(final_output))
+                return Sucesso(str(final_output))
+            except Exception:
                 return Falha(FalhaProcessamento(operacao="separacao_faixas"))
-            return Sucesso(str(output_path))
-        except Exception:
-            return Falha(FalhaProcessamento(operacao="separacao_faixas"))

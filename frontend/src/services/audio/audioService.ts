@@ -1,6 +1,4 @@
 import { request } from '../request';
-import { BASE_URL } from '../../utils/common';
-import { getAccessToken } from '../../utils/auth';
 import {
     AudioAnalysisResponse,
     AudioListResponse,
@@ -46,17 +44,19 @@ export const audioService = {
     },
 
     /**
-     * Devolve o URL absoluto para download/streaming. Anexa o token como
-     * query string nao e seguro: por isso usamos fetch com Authorization
-     * header e devolvemos um Blob URL para uso em <audio src=...>.
+     * Devolve um Blob URL para reproducao/download.
+     *
+     * Fluxo em dois passos para evitar o conflito de auth dupla do R2:
+     *   1. Pede a presigned URL ao backend (com JWT).
+     *   2. Faz o download directamente do R2 usando essa URL (sem JWT).
+     *      O R2 rejeita pedidos que trazem simultaneamente params de presigned
+     *      URL E um header Authorization.
      */
     async fetchAudioBlobUrl(audioId: string): Promise<string> {
-        const token = getAccessToken();
-        const res = await fetch(`${BASE_URL}/audio/${audioId}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error('Falha a obter ficheiro de audio.');
-        const blob = await res.blob();
+        const { url } = await request(`/audio/${audioId}`, { method: 'GET' }).then(r => r.json());
+        const audioRes = await fetch(url);
+        if (!audioRes.ok) throw new Error('Falha a obter ficheiro de audio.');
+        const blob = await audioRes.blob();
         return URL.createObjectURL(blob);
     },
 

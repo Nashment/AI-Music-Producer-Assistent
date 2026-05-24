@@ -1,24 +1,15 @@
 """
 Generation endpoints - Music generation from AI
-
-Responsabilidades desta camada:
-  - Receber pedidos HTTP e validar os parâmetros de entrada.
-  - Chamar o serviço e obter um Resultado[GeneracaoErro, T].
-  - Mapear GeneracaoErro -> HTTP Problem Details  (_handle_generation_error).
-  - Construir a resposta HTTP de sucesso.
-
-O que NAO esta aqui:
-  - Logica de negocio (esta no servico).
-  - Excecoes genericas do Python (o servico nunca as lanca para ca).
 """
 
 import os
 import uuid
-from typing import Callable
 from pathlib import Path
+from typing import Callable
 
 from fastapi import APIRouter, status, Depends
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, RedirectResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, get_current_user_id
@@ -103,11 +94,7 @@ def _handle_generation_error(erro: GeneracaoErro, instance: str) -> JSONResponse
                 "Ocorreu um erro inesperado no servico de geracao.", instance)
 
 
-def _handle_result(
-    resultado: Sucesso | Falha,
-    instance: str,
-    success_factory: Callable,
-) -> Response:
+def _handle_result(resultado, instance: str, success_factory: Callable) -> Response:
     match resultado:
         case Falha(erro=erro):
             return _handle_generation_error(erro, instance)
@@ -121,7 +108,6 @@ async def generate_tablature_from_audio(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Generate tablature PDF from an existing audio file."""
     resultado = await GenerationService(db).generate_tablature(
         audio_id=audio_id,
         user_id=str(user_id),
@@ -131,7 +117,8 @@ async def generate_tablature_from_audio(
         resultado,
         instance=f"/api/v1/generation/tablature/{audio_id}",
         success_factory=lambda pdf_path: FileResponse(
-            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name
+            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
     )
 
@@ -142,7 +129,6 @@ async def generate_partitura_from_audio(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Generate musical score PDF from an existing audio file."""
     resultado = await GenerationService(db).generate_partitura(
         audio_id=audio_id,
         user_id=str(user_id),
@@ -152,7 +138,8 @@ async def generate_partitura_from_audio(
         resultado,
         instance=f"/api/v1/generation/partitura/{audio_id}",
         success_factory=lambda pdf_path: FileResponse(
-            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name
+            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
     )
 
@@ -163,7 +150,6 @@ async def generate_music(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Submit an AI music generation request."""
     resultado = await GenerationService(db).submit_generation(
         user_id=str(user_id),
         project_id=request.project_id,
@@ -190,7 +176,6 @@ async def generate_cover(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Submit an AI cover generation request using a source audio URL + style prompt."""
     resultado = await GenerationService(db).submit_cover_generation(
         user_id=str(user_id),
         project_id=request.project_id,
@@ -219,7 +204,6 @@ async def get_generation_status(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Get the current status of a generation task."""
     resultado = await GenerationService(db).get_generation(generation_id, str(user_id))
     return _handle_result(
         resultado,
@@ -237,7 +221,6 @@ async def get_generation_result(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Get the full result of a completed generation task."""
     resultado = await GenerationService(db).get_generation(generation_id, str(user_id))
     return _handle_result(
         resultado,
@@ -255,7 +238,6 @@ async def delete_generation(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Delete a generation and its associated files."""
     resultado = await GenerationService(db).delete_generation(generation_id, str(user_id))
     return _handle_result(
         resultado,
@@ -264,17 +246,12 @@ async def delete_generation(
     )
 
 
-# ===========================================================================
-# Hierarquia: gerações por áudio + cortes
-# ===========================================================================
-
 @router.get("/by-audio/{audio_id}", response_model=GenerationListResponse)
 async def list_generations_by_audio(
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Lista as gerações raiz (não cortes) associadas a um áudio."""
     resultado = await GenerationService(db).list_generations_for_audio(audio_id, str(user_id))
     return _handle_result(
         resultado,
@@ -291,7 +268,6 @@ async def list_cuts_of_generation(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Lista os cortes (filhos) de uma geração."""
     resultado = await GenerationService(db).list_cuts_for_generation(generation_id, str(user_id))
     return _handle_result(
         resultado,
@@ -308,16 +284,15 @@ async def get_generation_audio(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Stream do ficheiro de áudio físico de uma geração (ou corte)."""
-    resultado = await GenerationService(db).get_generation_audio_path(generation_id, str(user_id))
+    """Devolve a presigned URL do R2 como JSON.
+    O cliente faz o segundo pedido directamente ao R2 sem o header Authorization,
+    evitando o conflito de autenticacao dupla que o R2 rejeita.
+    """
+    resultado = await GenerationService(db).get_generation_audio_url(generation_id, str(user_id))
     return _handle_result(
         resultado,
         instance=f"/api/v1/generation/{generation_id}/audio",
-        success_factory=lambda path: FileResponse(
-            path=str(path),
-            media_type="audio/mpeg" if str(path).lower().endswith(".mp3") else "audio/wav",
-            filename=path.name,
-        ),
+        success_factory=lambda url: JSONResponse(content={"url": url}),
     )
 
 
@@ -328,10 +303,6 @@ async def cut_generation_endpoint(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Cria um "corte" — um novo registo generations com
-    parent_generation_id apontando para esta geração — entre
-    inicio_segundos e fim_segundos. Janela máxima: 45s.
-    """
     resultado = await GenerationService(db).cut_generation(
         parent_generation_id=generation_id,
         user_id=str(user_id),
@@ -355,8 +326,6 @@ async def generate_partitura_from_generation(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Gera partitura PDF a partir do áudio de uma geração (tipicamente
-    um corte). Devolve o PDF directamente."""
     resultado = await GenerationService(db).generate_partitura_from_generation(
         generation_id=generation_id,
         user_id=str(user_id),
@@ -367,6 +336,7 @@ async def generate_partitura_from_generation(
         instance=f"/api/v1/generation/{generation_id}/partitura",
         success_factory=lambda pdf_path: FileResponse(
             path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
     )
 
@@ -377,8 +347,6 @@ async def generate_tablature_from_generation(
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Gera tablatura PDF a partir do áudio de uma geração (tipicamente
-    um corte). Devolve o PDF directamente."""
     resultado = await GenerationService(db).generate_tablature_from_generation(
         generation_id=generation_id,
         user_id=str(user_id),
@@ -389,5 +357,6 @@ async def generate_tablature_from_generation(
         instance=f"/api/v1/generation/{generation_id}/tablature",
         success_factory=lambda pdf_path: FileResponse(
             path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
+            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
     )

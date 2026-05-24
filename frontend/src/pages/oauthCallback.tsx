@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { userService } from '../services/user/userService';
+import { useAuthContext } from '../context/AuthContext';
 import Spinner from '../components/Layout/Spinner';
 
 /**
  * Pagina /auth/callback. O Google redirecciona o browser para aqui com
  * ?code=... — trocamos esse code pelo JWT no backend, guardamos via
- * utils/auth.ts e seguimos para /home.
+ * utils/auth.ts, actualizamos o AuthContext e seguimos para /home.
  */
 function OAuthCallbackPage() {
     const [params] = useSearchParams();
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
+    const { refresh } = useAuthContext();
 
     useEffect(() => {
         const code = params.get('code');
@@ -22,12 +24,15 @@ function OAuthCallbackPage() {
         (async () => {
             try {
                 await userService.exchangeGoogleCode(code);
+                // Actualiza o estado React do AuthProvider antes de navegar,
+                // para que o header e o perfil vejam o utilizador imediatamente.
+                await refresh();
                 navigate('/home', { replace: true });
             } catch (e: any) {
                 setError(e?.detail ?? 'Falha a trocar o código Google por token.');
             }
         })();
-    }, [params, navigate]);
+    }, [params, navigate, refresh]);
 
     if (error) {
         return (

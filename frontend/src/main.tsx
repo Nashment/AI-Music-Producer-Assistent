@@ -18,6 +18,7 @@ import AudioDetailPage from './pages/audioDetail';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/Layout/AppLayout';
 import { ToastProvider } from './components/Layout/Toast';
+import { AuthProvider } from './context/AuthContext';
 
 type Page = {
     path: string;
@@ -33,11 +34,6 @@ const authRoutes: Page[] = [
     { path: '/projects', element: <ProjectsPage /> },
     { path: '/projects/:projectId', element: <ProjectDetailPage /> },
     { path: '/projects/:projectId/audio/:audioId', element: <AudioDetailPage /> },
-
-    // NOTA: as rotas de geracao (/projects/:id/audio/:id/generate) ficam
-    // intencionalmente fora deste scaffold ate o fluxo de generation ser
-    // integrado. O service/hook/page do dominio existe no repo, basta
-    // re-introduzir a rota quando estiver pronto.
 
     { path: '/logout', element: <LogoutPage /> },
 ];
@@ -64,8 +60,10 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-        <ToastProvider>
-            <RouterProvider router={router} />
-        </ToastProvider>
+        <AuthProvider>
+            <ToastProvider>
+                <RouterProvider router={router} />
+            </ToastProvider>
+        </AuthProvider>
     </React.StrictMode>,
 );

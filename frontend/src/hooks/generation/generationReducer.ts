@@ -62,7 +62,7 @@ export function generationReducer(
                 ...state,
                 statusById: {
                     ...state.statusById,
-                    [action.payload.generation_id]: action.payload,
+                    [action.payload.id]: action.payload,
                 },
                 loading: false,
                 error: null,
@@ -73,7 +73,7 @@ export function generationReducer(
             return {
                 ...state,
                 submissions: state.submissions.filter(
-                    s => s.generation_id !== action.payload,
+                    s => s.id !== action.payload,
                 ),
                 statusById: rest,
             };

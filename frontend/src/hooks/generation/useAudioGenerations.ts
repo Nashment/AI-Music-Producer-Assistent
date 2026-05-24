@@ -40,7 +40,7 @@ export function useAudioGenerations(audioId: string | undefined) {
         // Buscamos cortes em paralelo
         const withCuts = await Promise.all(
             roots.map(async r => {
-                const cuts = await generationService.listCuts(r.generation_id);
+                const cuts = await generationService.listCuts(r.id);
                 return { ...r, cuts } as AudioGenerationNode;
             }),
         );

@@ -14,16 +14,16 @@ export function GenerationCard({ generation, onDelete }: Props) {
         <div className={`generation-card status-${generation.status}`}>
             <header className="generation-card-header">
                 <span className="generation-card-id">
-                    {generation.generation_id.slice(0, 8)}…
+                    {generation.id.slice(0, 8)}…
                 </span>
                 <span className="generation-card-status">{generation.status}</span>
             </header>
 
             <ul className="generation-card-files">
-                {generation.audio_file_path ? <li>audio: {generation.audio_file_path}</li> : null}
-                {generation.midi_file_path ? <li>midi: {generation.midi_file_path}</li> : null}
-                {generation.partitura_file_path ? <li>partitura: {generation.partitura_file_path}</li> : null}
-                {generation.tablatura_file_path ? <li>tablatura: {generation.tablatura_file_path}</li> : null}
+                {generation.audio_storage_key ? <li>audio: {generation.audio_storage_key}</li> : null}
+                {generation.midi_storage_key ? <li>midi: {generation.midi_storage_key}</li> : null}
+                {generation.partitura_storage_key ? <li>partitura: {generation.partitura_storage_key}</li> : null}
+                {generation.tablatura_storage_key ? <li>tablatura: {generation.tablatura_storage_key}</li> : null}
             </ul>
 
             {generation.error_message ? (
@@ -34,7 +34,7 @@ export function GenerationCard({ generation, onDelete }: Props) {
                 <button
                     type="button"
                     className="generation-card-delete"
-                    onClick={() => onDelete(generation.generation_id)}
+                    onClick={() => onDelete(generation.id)}
                 >
                     Apagar
                 </button>

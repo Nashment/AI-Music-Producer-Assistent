@@ -41,7 +41,7 @@ class Settings:
     # AI and Model Configuration
     LLM_API_KEY: Optional[str] = os.getenv("LLM_API_KEY")
     SUNO_API_KEY: Optional[str] = os.getenv("SUNO_API_KEY")
-    
+
     # Audio Processing Configuration
     AUDIO_UPLOAD_DIR: str = os.path.join(
         os.path.dirname(__file__),
@@ -60,6 +60,23 @@ class Settings:
     SAMPLE_RATE: int = 44100
     MAX_AUDIO_DURATION: int = 300  # seconds
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
+
+    # Cloudflare R2 Storage Configuration
+    R2_ACCOUNT_ID: str = os.getenv("R2_ACCOUNT_ID", "")
+    R2_BUCKET_NAME: str = os.getenv("R2_BUCKET_NAME", "")
+    R2_ACCESS_KEY_ID: str = os.getenv("R2_ACCESS_KEY_ID", "")
+    R2_SECRET_ACCESS_KEY: str = os.getenv("R2_SECRET_ACCESS_KEY", "")
+    R2_ENDPOINT_URL: str = os.getenv(
+        "R2_ENDPOINT_URL",
+        "https://" + os.getenv("R2_ACCOUNT_ID", "") + ".r2.cloudflarestorage.com"
+    )
+    # Tempo de validade das presigned URLs em segundos (1 hora)
+    R2_PRESIGNED_URL_EXPIRY: int = 3600
+
+    # Suno Webhook — URL publica do backend para o Suno notificar quando a task termina.
+    # Deve ser acessivel externamente (ex: https://api.tuaapp.com/api/v1/suno/webhook).
+    # Se vazio, o worker usa polling em vez de callbacks.
+    SUNO_CALLBACK_URL: str = os.getenv("SUNO_CALLBACK_URL", "")
 
     # Worker Configuration
     CELERY_BROKER_URL: str = os.getenv(

@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -14,6 +15,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 from app.data import AudioQueries, GenerationQueries
 from app.data.models import GenerationStatusEnum
+from app.services.storage_service import storage
 
 from worker.celery_app import celery_app
 
@@ -87,13 +89,10 @@ except ImportError as e:
 
 logger = get_task_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constantes para analise e correcao musical
-# ---------------------------------------------------------------------------
-_NOTAS_CROMATICAS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+_NOTAS_CROMATICAS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 _BEMOIS_PARA_SUSTENIDOS = {
-    'Db': 'C#', 'Eb': 'D#', 'Fb': 'E', 'Gb': 'F#',
-    'Ab': 'G#', 'Bb': 'A#', 'Cb': 'B',
+    "Db": "C#", "Eb": "D#", "Fb": "E", "Gb": "F#",
+    "Ab": "G#", "Bb": "A#", "Cb": "B",
 }
 LIMIAR_BPM = 5
 
@@ -104,32 +103,13 @@ TABLATURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_TABLATURA_DIR", str(DEFAULT_G
 
 
 def _new_task_session() -> tuple:
-    """
-    Cria um AsyncSession com NullPool para uso dentro de uma Celery task.
-
-    Cada task Celery corre num event loop proprio (asyncio.new_event_loop()).
-    O engine global da aplicacao tem um pool de ligacoes ligado ao loop em que
-    foi primeiro usado -- reutiliza-lo noutro loop causa:
-        "Future attached to a different loop"
-
-    Com NullPool nao ha pooling: cada ligacao e aberta e fechada a pedido,
-    sem dependencia do loop em que o engine foi criado.
-
-    Returns:
-        (session, engine) -- ambos devem ser fechados no bloco finally da task.
-    """
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     Session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     return Session(), engine
 
 
-# ---------------------------------------------------------------------------
-# Celery tasks (entry points)
-# ---------------------------------------------------------------------------
-
 @celery_app.task(bind=True)
 def process_generation_task(self, generation_id: str):
-    """Execute Suno generation and notation pipeline for a generation_id."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     return loop.run_until_complete(_process_generation_async(generation_id))
@@ -137,7 +117,6 @@ def process_generation_task(self, generation_id: str):
 
 @celery_app.task(bind=True)
 def process_cover_generation_task(self, generation_id: str, upload_url: str, audio_weight: float = 0.7):
-    """Execute Suno cover generation pipeline for a generation_id."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     return loop.run_until_complete(
@@ -149,9 +128,224 @@ def process_cover_generation_task(self, generation_id: str, upload_url: str, aud
     )
 
 
-# ---------------------------------------------------------------------------
-# Async implementation
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Notacao (tablatura / partitura) — correm no worker com basic_pitch
+# ------------------------------------------------------------------
+
+@celery_app.task(bind=True, time_limit=180)
+def generate_tablature_task(self, generation_id: str) -> dict:
+    """Gera tablatura PDF no worker (basic_pitch + lilypond). Devolve {"r2_key": "..."}."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_generate_tablature_for_generation_async(generation_id))
+
+
+@celery_app.task(bind=True, time_limit=180)
+def generate_partitura_task(self, generation_id: str) -> dict:
+    """Gera partitura PDF no worker (basic_pitch). Devolve {"r2_key": "..."}."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_generate_partitura_for_generation_async(generation_id))
+
+
+async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
+    db, engine = _new_task_session()
+    try:
+        generation = await GenerationQueries.get_generation(db=db, generation_id=generation_id)
+        if not generation or not generation.audio_storage_key:
+            raise ValueError(f"Generation {generation_id} sem audio disponivel.")
+
+        TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        with storage.temp_download(generation.audio_storage_key) as audio_path:
+            base      = f"{audio_path.stem}_{uuid.uuid4().hex[:8]}"
+            midi_path = TABLATURA_OUTPUT_DIR / f"{base}.mid"
+            ly_path   = TABLATURA_OUTPUT_DIR / f"{base}.ly"
+            pdf_final = TABLATURA_OUTPUT_DIR / f"{base}_tablatura.pdf"
+
+            try:
+                if not extrair_midi_do_audio:
+                    raise RuntimeError("basic_pitch nao disponivel no worker.")
+
+                midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+                midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
+                if not midi_ok:
+                    raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+
+                ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
+                if not ok_ly:
+                    raise RuntimeError("Falha na conversao MIDI->LY.")
+
+                notas = extrair_lista_notas(midi_data) if midi_data else []
+                ded   = otimizar_tablatura(notas) if notas else None
+                if ded:
+                    await asyncio.to_thread(injetar_inteligencia_no_ly, str(ly_path), ded)
+                else:
+                    await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
+
+                ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+                ly_pdf = ly_path.with_suffix(".pdf")
+
+                if not ok_pdf:
+                    # fallback sem dedilhado
+                    ly_path.unlink(missing_ok=True)
+                    ok_ly2 = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
+                    if ok_ly2:
+                        await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
+                        ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+                        ly_pdf = ly_path.with_suffix(".pdf")
+
+                if ly_pdf.exists():
+                    ly_pdf.replace(pdf_final)
+                if not pdf_final.exists():
+                    raise RuntimeError("PDF de tablatura nao foi criado.")
+
+                r2_key = f"tablature/{generation_id}_{uuid.uuid4().hex[:8]}.pdf"
+                if not storage.upload_file(str(pdf_final), r2_key):
+                    raise RuntimeError("Falha ao fazer upload da tablatura para R2.")
+                return {"r2_key": r2_key}
+
+            finally:
+                for p in [midi_path, ly_path, pdf_final]:
+                    if isinstance(p, Path):
+                        p.unlink(missing_ok=True)
+    finally:
+        await db.close()
+        await engine.dispose()
+
+
+async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
+    db, engine = _new_task_session()
+    try:
+        generation = await GenerationQueries.get_generation(db=db, generation_id=generation_id)
+        if not generation or not generation.audio_storage_key:
+            raise ValueError(f"Generation {generation_id} sem audio disponivel.")
+
+        PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        with storage.temp_download(generation.audio_storage_key) as audio_path:
+            base      = f"{audio_path.stem}_{uuid.uuid4().hex[:8]}"
+            midi_path = PARTITURA_OUTPUT_DIR / f"{base}.mid"
+            pdf_final = PARTITURA_OUTPUT_DIR / f"{base}_partitura.pdf"
+
+            try:
+                if not extrair_midi_do_audio:
+                    raise RuntimeError("basic_pitch nao disponivel no worker.")
+                if not exportar_pdf_automatico:
+                    raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
+
+                midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+                midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
+                if not midi_ok:
+                    raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+
+                result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+                if not result or not pdf_final.exists():
+                    raise RuntimeError("PDF de partitura nao foi criado.")
+
+                r2_key = f"partitura/{generation_id}_{uuid.uuid4().hex[:8]}.pdf"
+                if not storage.upload_file(str(pdf_final), r2_key):
+                    raise RuntimeError("Falha ao fazer upload da partitura para R2.")
+                return {"r2_key": r2_key}
+
+            finally:
+                for p in [midi_path, pdf_final]:
+                    if isinstance(p, Path):
+                        p.unlink(missing_ok=True)
+    finally:
+        await db.close()
+        await engine.dispose()
+
+
+@celery_app.task(bind=True, time_limit=180)
+def generate_tablature_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
+    """Gera tablatura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_generate_tablature_from_key_async(audio_storage_key, prefix))
+
+
+@celery_app.task(bind=True, time_limit=180)
+def generate_partitura_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
+    """Gera partitura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(_generate_partitura_from_key_async(audio_storage_key, prefix))
+
+
+async def _generate_tablature_from_key_async(audio_storage_key: str, prefix: str) -> dict:
+    TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with storage.temp_download(audio_storage_key) as audio_path:
+        base      = f"{prefix}_{uuid.uuid4().hex[:8]}"
+        midi_path = TABLATURA_OUTPUT_DIR / f"{base}.mid"
+        ly_path   = TABLATURA_OUTPUT_DIR / f"{base}.ly"
+        pdf_final = TABLATURA_OUTPUT_DIR / f"{base}_tablatura.pdf"
+        try:
+            if not extrair_midi_do_audio:
+                raise RuntimeError("basic_pitch nao disponivel no worker.")
+            midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+            midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
+            if not midi_ok:
+                raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+            ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
+            if not ok_ly:
+                raise RuntimeError("Falha na conversao MIDI->LY.")
+            notas = extrair_lista_notas(midi_data) if midi_data else []
+            ded   = otimizar_tablatura(notas) if notas else None
+            if ded:
+                await asyncio.to_thread(injetar_inteligencia_no_ly, str(ly_path), ded)
+            else:
+                await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
+            ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+            ly_pdf = ly_path.with_suffix(".pdf")
+            if not ok_pdf:
+                ly_path.unlink(missing_ok=True)
+                ok_ly2 = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
+                if ok_ly2:
+                    await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
+                    ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+                    ly_pdf = ly_path.with_suffix(".pdf")
+            if ly_pdf.exists():
+                ly_pdf.replace(pdf_final)
+            if not pdf_final.exists():
+                raise RuntimeError("PDF de tablatura nao foi criado.")
+            r2_key = f"tablature/{prefix}_{uuid.uuid4().hex[:8]}.pdf"
+            if not storage.upload_file(str(pdf_final), r2_key):
+                raise RuntimeError("Falha ao fazer upload da tablatura para R2.")
+            return {"r2_key": r2_key}
+        finally:
+            for p in [midi_path, ly_path, pdf_final]:
+                if isinstance(p, Path):
+                    p.unlink(missing_ok=True)
+
+
+async def _generate_partitura_from_key_async(audio_storage_key: str, prefix: str) -> dict:
+    PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with storage.temp_download(audio_storage_key) as audio_path:
+        base      = f"{prefix}_{uuid.uuid4().hex[:8]}"
+        midi_path = PARTITURA_OUTPUT_DIR / f"{base}.mid"
+        pdf_final = PARTITURA_OUTPUT_DIR / f"{base}_partitura.pdf"
+        try:
+            if not extrair_midi_do_audio:
+                raise RuntimeError("basic_pitch nao disponivel no worker.")
+            if not exportar_pdf_automatico:
+                raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
+            midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+            midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
+            if not midi_ok:
+                raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+            result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+            if not result or not pdf_final.exists():
+                raise RuntimeError("PDF de partitura nao foi criado.")
+            r2_key = f"partitura/{prefix}_{uuid.uuid4().hex[:8]}.pdf"
+            if not storage.upload_file(str(pdf_final), r2_key):
+                raise RuntimeError("Falha ao fazer upload da partitura para R2.")
+            return {"r2_key": r2_key}
+        finally:
+            for p in [midi_path, pdf_final]:
+                if isinstance(p, Path):
+                    p.unlink(missing_ok=True)
+
 
 async def _process_generation_async(generation_id: str):
     db = None
@@ -190,18 +384,11 @@ async def _process_generation_async(generation_id: str):
         if not suno_task_id:
             raise RuntimeError("Falha ao iniciar geracao no Suno.")
 
-        logger.info(
-            "Suno generation started: generation_id=%s suno_task_id=%s",
-            generation_id, suno_task_id,
-        )
+        logger.info("Suno generation started: generation_id=%s suno_task_id=%s", generation_id, suno_task_id)
 
-        result = await _poll_and_finalize(
-            db=db,
-            generation_id=generation_id,
-            suno_task_id=suno_task_id,
-        )
+        result = await _poll_and_finalize(db=db, generation_id=generation_id, suno_task_id=suno_task_id)
 
-        audio_path_gerado = Path(result["audio_file_path"])
+        audio_path_gerado = Path(result["audio_storage_key"])
         audio_path_final, resumo_ajustes = await _ajustar_audio_gerado_async(
             audio_path_gerado=audio_path_gerado,
             bpm_original=getattr(audio, "bpm", None),
@@ -211,20 +398,29 @@ async def _process_generation_async(generation_id: str):
         )
         logger.info("Pos-processamento concluido para generation %s: %s", generation_id, resumo_ajustes)
 
+        r2_key = f"generations/{generation_id}{audio_path_final.suffix}"
+        uploaded = storage.upload_file(str(audio_path_final), r2_key)
+        if not uploaded:
+            raise RuntimeError(f"Falha ao fazer upload do audio gerado para R2: {r2_key}")
+        try:
+            audio_path_final.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         await GenerationQueries.update_generation_status(
             db=db,
             generation_id=generation_id,
             status=GenerationStatusEnum.COMPLETED,
-            audio_path=str(audio_path_final),
+            audio_key=r2_key,
         )
 
         return {
             "generation_id": generation_id,
             "suno_task_id": suno_task_id,
             "status": "completed",
-            "audio_file_path": str(audio_path_final),
-            "partitura_file_path": result.get("partitura_file_path"),
-            "tablatura_file_path": result.get("tablatura_file_path"),
+            "audio_storage_key": r2_key,
+            "partitura_storage_key": result.get("partitura_storage_key"),
+            "tablatura_storage_key": result.get("tablatura_storage_key"),
             "pos_processamento": resumo_ajustes,
         }
     except Exception as e:
@@ -287,14 +483,10 @@ async def _process_cover_generation_async(generation_id: str, upload_url: str, a
             generation_id, suno_task_id, upload_url, audio_weight,
         )
 
-        result = await _poll_and_finalize(
-            db=db,
-            generation_id=generation_id,
-            suno_task_id=suno_task_id,
-        )
+        result = await _poll_and_finalize(db=db, generation_id=generation_id, suno_task_id=suno_task_id)
 
         audio = await AudioQueries.get_audio_file(db=db, audio_id=generation.audio_file_id)
-        audio_path_gerado = Path(result["audio_file_path"])
+        audio_path_gerado = Path(result["audio_storage_key"])
         audio_path_final, resumo_ajustes = await _ajustar_audio_gerado_async(
             audio_path_gerado=audio_path_gerado,
             bpm_original=getattr(audio, "bpm", None) if audio else None,
@@ -304,20 +496,29 @@ async def _process_cover_generation_async(generation_id: str, upload_url: str, a
         )
         logger.info("Pos-processamento concluido para cover generation %s: %s", generation_id, resumo_ajustes)
 
+        r2_key = f"generations/{generation_id}{audio_path_final.suffix}"
+        uploaded = storage.upload_file(str(audio_path_final), r2_key)
+        if not uploaded:
+            raise RuntimeError(f"Falha ao fazer upload do audio de cover para R2: {r2_key}")
+        try:
+            audio_path_final.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         await GenerationQueries.update_generation_status(
             db=db,
             generation_id=generation_id,
             status=GenerationStatusEnum.COMPLETED,
-            audio_path=str(audio_path_final),
+            audio_key=r2_key,
         )
 
         return {
             "generation_id": generation_id,
             "suno_task_id": suno_task_id,
             "status": "completed",
-            "audio_file_path": str(audio_path_final),
-            "partitura_file_path": result.get("partitura_file_path"),
-            "tablatura_file_path": result.get("tablatura_file_path"),
+            "audio_storage_key": r2_key,
+            "partitura_storage_key": result.get("partitura_storage_key"),
+            "tablatura_storage_key": result.get("tablatura_storage_key"),
             "pos_processamento": resumo_ajustes,
         }
     except Exception as e:
@@ -341,7 +542,7 @@ async def _process_cover_generation_async(generation_id: str, upload_url: str, a
 
 
 async def _poll_and_finalize(db, generation_id: str, suno_task_id: str):
-    max_attempts = 20  # ~10 minutes with 30 sec interval
+    max_attempts = 20
 
     for attempt in range(1, max_attempts + 1):
         await asyncio.sleep(30)
@@ -381,23 +582,16 @@ async def _poll_and_finalize(db, generation_id: str, suno_task_id: str):
         if not ok:
             raise RuntimeError("Falha ao descarregar o audio gerado.")
 
-        logger.info(
-            "Audio Suno descarregado para generation %s -- a iniciar pos-processamento.",
-            generation_id,
-        )
+        logger.info("Audio Suno descarregado para generation %s -- a iniciar pos-processamento.", generation_id)
 
         return {
-            "audio_file_path": str(audio_path),
-            "partitura_file_path": None,
-            "tablatura_file_path": None,
+            "audio_storage_key": str(audio_path),
+            "partitura_storage_key": None,
+            "tablatura_storage_key": None,
         }
 
     raise RuntimeError("Tempo limite de geracao excedido (10 minutos).")
 
-
-# ---------------------------------------------------------------------------
-# Helpers JSON
-# ---------------------------------------------------------------------------
 
 def _walk_json_values(node: Any):
     if isinstance(node, dict):
@@ -428,10 +622,6 @@ def _extract_suno_task_status(payload: dict) -> Optional[str]:
     except (KeyError, AttributeError):
         return None
 
-
-# ---------------------------------------------------------------------------
-# Geracao de ficheiros de notacao (nao criticos)
-# ---------------------------------------------------------------------------
 
 async def _generate_notation_files(generation_id: str, audio_path: Path):
     midi_path: Optional[Path] = None
@@ -465,10 +655,8 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
             if result and p_pdf.exists():
                 partitura_path = str(p_pdf)
 
-        if all([
-            converter_midi_para_ly, injetar_inteligencia_no_ly, forcar_tablatura_no_ly,
-            compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura,
-        ]):
+        if all([converter_midi_para_ly, injetar_inteligencia_no_ly, forcar_tablatura_no_ly,
+                compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
             ly_path = TABLATURA_OUTPUT_DIR / f"{generation_id}.ly"
             ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
             if ok_ly:
@@ -510,12 +698,7 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
     return partitura_path, tablatura_path
 
 
-# ---------------------------------------------------------------------------
-# Helpers de teoria musical
-# ---------------------------------------------------------------------------
-
 def _extrair_nota_raiz(tom: str) -> Optional[str]:
-    """Extrai a nota raiz de uma string de tom (ex: 'A Menor' -> 'A', 'C# Maior' -> 'C#')."""
     if not tom:
         return None
     nota = tom.strip().split()[0]
@@ -524,9 +707,6 @@ def _extrair_nota_raiz(tom: str) -> Optional[str]:
 
 
 def _calcular_semitons_entre_tons(tom_original: str, tom_gerado: str) -> int:
-    """Calcula os semitons necessarios para transpor tom_gerado ate tom_original.
-    Devolve um valor no intervalo [-6, +6] (caminho mais curto no circulo cromatico).
-    """
     nota_orig = _extrair_nota_raiz(tom_original)
     nota_ger  = _extrair_nota_raiz(tom_gerado)
     if not nota_orig or not nota_ger:
@@ -537,10 +717,6 @@ def _calcular_semitons_entre_tons(tom_original: str, tom_gerado: str) -> int:
     return diff
 
 
-# ---------------------------------------------------------------------------
-# Pos-processamento: analise e correccao do audio gerado
-# ---------------------------------------------------------------------------
-
 async def _ajustar_audio_gerado_async(
     audio_path_gerado: Path,
     bpm_original: Optional[float],
@@ -548,22 +724,6 @@ async def _ajustar_audio_gerado_async(
     generation_id: str,
     instrumento_alvo: Optional[str] = None,
 ) -> tuple:
-    """Analisa o audio gerado pelo Suno e corrige BPM e tonalidade se necessario.
-    Tambem separa a pista do instrumento pedido, tornando-a o audio final.
-
-    Fluxo:
-        1. Analisar o audio gerado (BPM + tom).
-        2. Se |BPM_gerado - BPM_original| > LIMIAR_BPM -> ajustar tempo.
-        3. Se nota raiz diferir -> transpor pelo caminho cromatico mais curto.
-        4. Separar a faixa do instrumento se disponivel.
-        5. Consolidar num ficheiro .wav final e apagar intermediarios.
-
-    O audio final guardado em audio_file_path e sempre o instrumento isolado
-    (pos-processado), nunca o mix completo do Suno.
-
-    Processo inteiramente nao-critico: qualquer falha e registada em log e o
-    audio sem correccao e preservado.
-    """
     resumo: dict = {
         "bpm_original": bpm_original,
         "tom_original": tom_original,
@@ -576,13 +736,9 @@ async def _ajustar_audio_gerado_async(
     }
 
     if not all([analisar_audio_completo, ajustar_bpm_automatico, transpor_musica]):
-        logger.warning(
-            "[pos-proc] Modulos de analise/ajuste indisponiveis para generation %s -- a saltar.",
-            generation_id,
-        )
+        logger.warning("[pos-proc] Modulos de analise/ajuste indisponiveis para generation %s.", generation_id)
         return audio_path_gerado, resumo
 
-    # -- 1. Analise do audio gerado
     logger.info("[pos-proc] A analisar o audio gerado para generation %s...", generation_id)
     try:
         analise = await asyncio.to_thread(analisar_audio_completo, str(audio_path_gerado))
@@ -590,10 +746,7 @@ async def _ajustar_audio_gerado_async(
         tom_gerado = analise.get("key")
         resumo["bpm_gerado"] = bpm_gerado
         resumo["tom_gerado"] = tom_gerado
-        logger.info(
-            "[pos-proc] Analise generation %s -> BPM=%s, Tom=%s",
-            generation_id, bpm_gerado, tom_gerado,
-        )
+        logger.info("[pos-proc] Analise generation %s -> BPM=%s, Tom=%s", generation_id, bpm_gerado, tom_gerado)
     except Exception as exc:
         logger.warning("[pos-proc] Falha na analise do audio gerado (%s): %s", generation_id, exc)
         resumo["erros"].append(f"analise: {exc}")
@@ -601,14 +754,10 @@ async def _ajustar_audio_gerado_async(
 
     caminho_atual = audio_path_gerado
 
-    # -- 2. Ajuste de BPM
     if bpm_original and bpm_gerado:
         diferenca_bpm = abs(float(bpm_gerado) - float(bpm_original))
         if diferenca_bpm > LIMIAR_BPM:
-            logger.info(
-                "[pos-proc] BPM incompativel para generation %s (gerado=%s, original=%s, D=%.1f) -- a ajustar...",
-                generation_id, bpm_gerado, bpm_original, diferenca_bpm,
-            )
+            logger.info("[pos-proc] BPM incompativel para generation %s -- a ajustar...", generation_id)
             caminho_bpm = audio_path_gerado.parent / f"{generation_id}_bpm.wav"
             try:
                 await asyncio.to_thread(ajustar_bpm_automatico, str(caminho_atual), str(caminho_bpm), float(bpm_original))
@@ -617,29 +766,13 @@ async def _ajustar_audio_gerado_async(
                         caminho_atual.unlink(missing_ok=True)
                     caminho_atual = caminho_bpm
                     resumo["ajuste_bpm_aplicado"] = True
-                    logger.info("[pos-proc] Ajuste de BPM aplicado para generation %s.", generation_id)
-                else:
-                    logger.warning(
-                        "[pos-proc] ajustar_bpm_automatico nao produziu ficheiro para generation %s.",
-                        generation_id,
-                    )
             except Exception as exc:
                 logger.warning("[pos-proc] Falha no ajuste de BPM para generation %s: %s", generation_id, exc)
                 resumo["erros"].append(f"ajuste_bpm: {exc}")
-        else:
-            logger.info(
-                "[pos-proc] BPM dentro do limiar para generation %s (D=%.1f <= %d) -- sem ajuste.",
-                generation_id, diferenca_bpm, LIMIAR_BPM,
-            )
 
-    # -- 3. Transposicao de tonalidade
     if tom_original and tom_gerado:
         semitons = _calcular_semitons_entre_tons(tom_original, tom_gerado)
         if semitons != 0:
-            logger.info(
-                "[pos-proc] Tom incompativel para generation %s (gerado=%s, original=%s, D=%+d st) -- a transpor...",
-                generation_id, tom_gerado, tom_original, semitons,
-            )
             caminho_trans = audio_path_gerado.parent / f"{generation_id}_trans.wav"
             try:
                 await asyncio.to_thread(transpor_musica, str(caminho_atual), str(caminho_trans), semitons, tom_gerado)
@@ -648,78 +781,31 @@ async def _ajustar_audio_gerado_async(
                         caminho_atual.unlink(missing_ok=True)
                     caminho_atual = caminho_trans
                     resumo["semitons_transpostos"] = semitons
-                    logger.info(
-                        "[pos-proc] Transposicao de %+d semitons aplicada para generation %s.",
-                        semitons, generation_id,
-                    )
-                else:
-                    logger.warning(
-                        "[pos-proc] transpor_musica nao produziu ficheiro para generation %s.",
-                        generation_id,
-                    )
             except Exception as exc:
                 logger.warning("[pos-proc] Falha na transposicao para generation %s: %s", generation_id, exc)
                 resumo["erros"].append(f"transposicao: {exc}")
-        else:
-            logger.info(
-                "[pos-proc] Tonalidade compativel para generation %s (%s ~= %s) -- sem transposicao.",
-                generation_id, tom_gerado, tom_original,
-            )
 
-    # -- 4. Separacao de pistas
-    # O audio final sera apenas a faixa do instrumento pedido; o mix Suno e descartado.
     if extrair_instrumento and instrumento_alvo:
         try:
-            logger.info(
-                "[pos-proc] A tentar separar a faixa de '%s' para generation %s...",
-                instrumento_alvo, generation_id,
-            )
-            await asyncio.to_thread(
-                extrair_instrumento,
-                str(caminho_atual),
-                instrumento_alvo,
-                str(audio_path_gerado.parent),
-            )
+            await asyncio.to_thread(extrair_instrumento, str(caminho_atual), instrumento_alvo, str(audio_path_gerado.parent))
             nome_base = os.path.splitext(os.path.basename(caminho_atual))[0]
             caminho_separado = audio_path_gerado.parent / f"{nome_base}_{instrumento_alvo.lower().strip()}.wav"
-
             if caminho_separado.exists():
                 resumo["separacao_aplicada"] = True
-                logger.info(
-                    "[pos-proc] Faixa de '%s' separada com sucesso para %s.",
-                    instrumento_alvo, generation_id,
-                )
                 if caminho_atual != audio_path_gerado:
                     caminho_atual.unlink(missing_ok=True)
                 caminho_atual = caminho_separado
-                logger.info(
-                    "[pos-proc] O audio final sera apenas a faixa de '%s' para %s.",
-                    instrumento_alvo, generation_id,
-                )
-            else:
-                logger.warning(
-                    "[pos-proc] extrair_instrumento nao produziu o ficheiro esperado para %s.",
-                    generation_id,
-                )
         except Exception as exc:
-            logger.warning(
-                "[pos-proc] Falha na separacao de faixas para generation %s: %s",
-                generation_id, exc,
-            )
+            logger.warning("[pos-proc] Falha na separacao de faixas para generation %s: %s", generation_id, exc)
             resumo["erros"].append(f"separador_faixas: {exc}")
 
-    # -- 5. Consolidar para caminho final
     if caminho_atual != audio_path_gerado:
         caminho_final = audio_path_gerado.parent / f"{generation_id}.wav"
         try:
             caminho_atual.rename(caminho_final)
             caminho_atual = caminho_final
-            logger.info("[pos-proc] Audio final corrigido guardado em %s.", caminho_final)
         except Exception as exc:
-            logger.warning(
-                "[pos-proc] Nao foi possivel renomear ficheiro final para generation %s: %s",
-                generation_id, exc,
-            )
+            logger.warning("[pos-proc] Nao foi possivel renomear ficheiro final para generation %s: %s", generation_id, exc)
             resumo["erros"].append(f"rename: {exc}")
         try:
             if audio_path_gerado.suffix.lower() != ".wav" and audio_path_gerado.exists():
@@ -731,11 +817,17 @@ async def _ajustar_audio_gerado_async(
 
 
 def _build_suno_prompt(prompt: str, instrument: str, genre: Optional[str], audio, tempo_override: Optional[int]) -> str:
+    """Constroi o campo  para a API Suno.
+
+    Ordem de prioridade:
+      instrumento + genero (identidade sonora) -> contexto musical (BPM, tom) ->
+      descricao do utilizador (contexto criativo).
+    """
     bpm = tempo_override or getattr(audio, "bpm", None)
     key = getattr(audio, "key", None)
     time_sig = getattr(audio, "time_signature", None)
 
-    parts = [prompt, f"{instrument} solo"]
+    parts = [f"{instrument} solo"]
     if genre:
         parts.append(genre)
     if bpm:
@@ -745,6 +837,8 @@ def _build_suno_prompt(prompt: str, instrument: str, genre: Optional[str], audio
     if time_sig:
         parts.append(f"{time_sig} time signature")
     parts.append("professional quality")
+    if prompt:
+        parts.append(prompt)
 
     return ", ".join(parts)
 

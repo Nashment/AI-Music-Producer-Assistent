@@ -48,7 +48,7 @@ class CoverGenerationRequest(BaseModel):
 
 class GenerationResponse(BaseModel):
     """Generation task response — returned immediately after submission."""
-    generation_id: str
+    id: uuid.UUID
     status: str
     project_id: uuid.UUID
     prompt: str
@@ -63,17 +63,17 @@ class GenerationResponse(BaseModel):
 
 class GenerationResult(BaseModel):
     """Full generation result — returned when polling for status/result."""
-    generation_id: str
+    id: uuid.UUID
     status: str
     project_id: Optional[uuid.UUID] = None
     audio_file_id: Optional[uuid.UUID] = None
     parent_generation_id: Optional[uuid.UUID] = None
     prompt: Optional[str] = None
     instrument: Optional[str] = None
-    audio_file_path: Optional[str] = None
-    midi_file_path: Optional[str] = None
-    partitura_file_path: Optional[str] = None
-    tablatura_file_path: Optional[str] = None
+    audio_storage_key: Optional[str] = None
+    midi_storage_key: Optional[str] = None
+    partitura_storage_key: Optional[str] = None
+    tablatura_storage_key: Optional[str] = None
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -83,7 +83,7 @@ class GenerationResult(BaseModel):
 
 
 class CutGenerationRequest(BaseModel):
-    """Pedido para cortar uma geração existente.
+    """Pedido para cortar uma geracao existente.
 
     O backend valida fim_segundos - inicio_segundos <= 45.
     """
@@ -92,6 +92,5 @@ class CutGenerationRequest(BaseModel):
 
 
 class GenerationListResponse(BaseModel):
-    """Lista de gerações + cortes de cada uma. Devolvida pelo
-    GET /generation/by-audio/{audio_id} para o frontend desenhar a árvore."""
+    """Lista de geracoes + cortes de cada uma."""
     generations: List[GenerationResult]

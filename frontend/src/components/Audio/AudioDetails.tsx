@@ -11,7 +11,7 @@ interface Props {
 export function AudioDetails({ audio, blobUrl }: Props) {
     return (
         <div className="audio-details">
-            <h2>{audio.file_path.split(/[\\/]/).pop() ?? 'audio'}</h2>
+            <h2>{audio.storage_key.split(/[\\/]/).pop() ?? 'audio'}</h2>
 
             <dl className="audio-details-meta">
                 <dt>Duracao</dt>

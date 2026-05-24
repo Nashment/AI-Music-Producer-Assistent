@@ -1,12 +1,9 @@
 """
 Generation Service - Music generation orchestration and AI integration
-
-Os métodos deste serviço devolvem Resultado[GeneracaoErro, T] em vez de
-lançar exceções. Desta forma a camada de serviço fala em linguagem de
-negócio e a tradução para HTTP fica exclusivamente no endpoint.
 """
 
 import asyncio
+import tempfile
 import uuid
 from pathlib import Path
 from typing import List, Optional
@@ -25,6 +22,7 @@ from app.domain.errors.generation_errors import (
     IntervaloCorteInvalido,
     FicheiroGeracaoIndisponivel,
 )
+from app.services.storage_service import storage
 
 try:
     from worker.audio_utils.corte_audio import cortar_audio, obter_duracao_audio
@@ -63,7 +61,7 @@ class GenerationService:
         self.db = db_session
 
     # ------------------------------------------------------------------
-    # Submissão
+    # Submissao
     # ------------------------------------------------------------------
 
     async def submit_generation(
@@ -77,7 +75,6 @@ class GenerationService:
         duration: Optional[int],
         tempo_override: Optional[int],
     ) -> Resultado:
-        """Cria registo PENDING e enfileira processamento assíncrono no Celery."""
         try:
             from worker.tasks.generation_tasks import process_generation_task
         except ImportError as e:
@@ -87,14 +84,12 @@ class GenerationService:
         if isinstance(audio_resultado, Falha):
             return audio_resultado
 
-        generation_id = str(uuid.uuid4())
         generation = await self._criar_registo_geracao(
-            generation_id, user_id, project_id, audio_id,
-            prompt, instrument, genre, duration, tempo_override,
+            user_id, project_id, audio_id, prompt, instrument, genre, duration, tempo_override,
         )
         return await self._enfileirar_tarefa(
             generation, process_generation_task,
-            {"generation_id": generation_id},
+            {"generation_id": str(generation.id)},
         )
 
     async def submit_cover_generation(
@@ -110,7 +105,6 @@ class GenerationService:
         upload_url: Optional[str],
         audio_weight: float,
     ) -> Resultado:
-        """Cria registo PENDING e enfileira cover generation assíncrona no Celery."""
         try:
             from worker.tasks.generation_tasks import process_cover_generation_task
         except ImportError as e:
@@ -121,30 +115,30 @@ class GenerationService:
             return audio_resultado
         audio = audio_resultado.valor
 
-        resolved_upload_url = upload_url or audio.file_path
+        if upload_url:
+            resolved_upload_url = upload_url
+        else:
+            # URL com 24h de validade para dar tempo ao Suno de processar a task
+            resolved_upload_url = storage.get_presigned_url(audio.storage_key, expiry_seconds=86400)
         if not isinstance(resolved_upload_url, str) or not resolved_upload_url.startswith(("http://", "https://")):
             return Falha(CoverUrlInvalido(url_recebido=str(resolved_upload_url)))
         if audio_weight < 0.0 or audio_weight > 1.0:
             return Falha(PesoAudioInvalido(valor=audio_weight))
 
-        generation_id = str(uuid.uuid4())
         generation = await self._criar_registo_geracao(
-            generation_id, user_id, project_id, audio_id,
-            prompt, instrument, genre, duration, tempo_override,
+            user_id, project_id, audio_id, prompt, instrument, genre, duration, tempo_override,
         )
         return await self._enfileirar_tarefa(
             generation, process_cover_generation_task,
-            {"generation_id": generation_id, "upload_url": resolved_upload_url, "audio_weight": audio_weight},
+            {"generation_id": str(generation.id), "upload_url": resolved_upload_url, "audio_weight": audio_weight},
         )
 
     # ------------------------------------------------------------------
-    # Leitura / Eliminação
+    # Leitura / Eliminacao
     # ------------------------------------------------------------------
 
     async def get_generation(self, generation_id: str, user_id: str) -> Resultado:
         gen = await GenerationQueries.get_generation(db=self.db, generation_id=generation_id)
-        # Devolve NaoEncontrada mesmo se existir mas pertencer a outro utilizador,
-        # para não confirmar a existência do recurso (prevenção de enumeração).
         if not gen or str(gen.user_id) != user_id:
             return Falha(GeracaoNaoEncontrada(generation_id=generation_id))
         return Sucesso(gen)
@@ -158,37 +152,79 @@ class GenerationService:
         return Sucesso(None)
 
     # ------------------------------------------------------------------
-    # Geração de notação a partir de áudio existente
+    # Geracao de notacao a partir de audio existente
     # ------------------------------------------------------------------
 
     async def generate_tablature(self, audio_id: uuid.UUID, user_id: str, tablatura_dir: str) -> Resultado:
-        """Gera uma tablatura PDF a partir de um ficheiro de áudio existente."""
-        input_resultado = await self._get_audio_path_or_fail(audio_id, user_id)
-        if isinstance(input_resultado, Falha):
-            return input_resultado
-        return await self._generate_tablature_from_path(input_resultado.valor, tablatura_dir)
+        """Gera tablatura a partir de um audio_id. Usa o mesmo caminho via worker Celery."""
+        try:
+            from worker.tasks.generation_tasks import generate_tablature_from_audio_key_task
+        except ImportError as e:
+            return Falha(WorkerIndisponivel(detalhe=str(e)))
+
+        key_resultado = await self._get_audio_s3_key_or_fail(audio_id, user_id)
+        if isinstance(key_resultado, Falha):
+            return key_resultado
+        audio_key = key_resultado.valor
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: generate_tablature_from_audio_key_task.apply_async(
+                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)}
+                ).get(timeout=120)
+            )
+            r2_key = result["r2_key"]
+        except Exception as e:
+            return Falha(FalhaProcessamentoAudio(operacao=f"celery_tablature_audio: {e}"))
+
+        out_dir = Path(tablatura_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        local_pdf = out_dir / f"{audio_id}_{uuid.uuid4().hex[:8]}_tablatura.pdf"
+        ok = storage.download_file(r2_key, str(local_pdf))
+        storage.delete_file(r2_key)
+        if not ok or not local_pdf.exists():
+            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
+        return Sucesso(str(local_pdf))
 
     async def generate_partitura(self, audio_id: uuid.UUID, user_id: str, partitura_dir: str) -> Resultado:
-        """Gera uma partitura PDF a partir de um ficheiro de áudio existente."""
-        input_resultado = await self._get_audio_path_or_fail(audio_id, user_id)
-        if isinstance(input_resultado, Falha):
-            return input_resultado
-        return await self._generate_partitura_from_path(input_resultado.valor, partitura_dir)
+        """Gera partitura a partir de um audio_id. Usa o mesmo caminho via worker Celery."""
+        try:
+            from worker.tasks.generation_tasks import generate_partitura_from_audio_key_task
+        except ImportError as e:
+            return Falha(WorkerIndisponivel(detalhe=str(e)))
 
-    async def _generate_tablature_from_path(
-        self,
-        input_path: Path,
-        tablatura_dir: str,
-    ) -> Resultado:
-        """Implementação reutilizável: aceita um Path de áudio (audio raw ou
-        áudio de uma geração) e devolve Sucesso(pdf_path)."""
+        key_resultado = await self._get_audio_s3_key_or_fail(audio_id, user_id)
+        if isinstance(key_resultado, Falha):
+            return key_resultado
+        audio_key = key_resultado.valor
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: generate_partitura_from_audio_key_task.apply_async(
+                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)}
+                ).get(timeout=120)
+            )
+            r2_key = result["r2_key"]
+        except Exception as e:
+            return Falha(FalhaProcessamentoAudio(operacao=f"celery_partitura_audio: {e}"))
+
+        out_dir = Path(partitura_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        local_pdf = out_dir / f"{audio_id}_{uuid.uuid4().hex[:8]}_partitura.pdf"
+        ok = storage.download_file(r2_key, str(local_pdf))
+        storage.delete_file(r2_key)
+        if not ok or not local_pdf.exists():
+            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
+        return Sucesso(str(local_pdf))
+
+    async def _generate_tablature_from_path(self, input_path: Path, tablatura_dir: str) -> Resultado:
         if not all([extrair_midi_do_audio, converter_midi_para_ly, injetar_inteligencia_no_ly,
                     forcar_tablatura_no_ly, compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
-            return Falha(WorkerIndisponivel(detalhe="Módulos de tablatura não disponíveis."))
+            return Falha(WorkerIndisponivel(detalhe="Modulos de tablatura nao disponiveis."))
 
         out = Path(tablatura_dir)
         out.mkdir(parents=True, exist_ok=True)
-        base     = f"{input_path.stem}_{uuid.uuid4().hex[:8]}"
+        base      = f"{input_path.stem}_{uuid.uuid4().hex[:8]}"
         midi_path = out / f"{base}.mid"
         ly_path   = out / f"{base}.ly"
         pdf_path  = out / f"{base}_tablatura.pdf"
@@ -220,14 +256,9 @@ class GenerationService:
             for p in [midi_path, ly_path]:
                 p.unlink(missing_ok=True)
 
-    async def _generate_partitura_from_path(
-        self,
-        input_path: Path,
-        partitura_dir: str,
-    ) -> Resultado:
-        """Implementação reutilizável da geração de partitura a partir de um Path."""
+    async def _generate_partitura_from_path(self, input_path: Path, partitura_dir: str) -> Resultado:
         if not all([extrair_midi_do_audio, exportar_pdf_automatico]):
-            return Falha(WorkerIndisponivel(detalhe="Módulos de partitura não disponíveis."))
+            return Falha(WorkerIndisponivel(detalhe="Modulos de partitura nao disponiveis."))
 
         out = Path(partitura_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -249,20 +280,10 @@ class GenerationService:
             midi_path.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
-    # Hierarquia: gerações por áudio + cortes
+    # Hierarquia: geracoes por audio + cortes
     # ------------------------------------------------------------------
 
-    async def list_generations_for_audio(
-        self,
-        audio_id: uuid.UUID,
-        user_id: str,
-    ) -> Resultado:
-        """Lista gerações raiz (não cortes) para um áudio do utilizador.
-
-        Os cortes lêem-se separadamente via list_cuts_of_generation —
-        normalmente o frontend pede primeiro a lista de raízes e depois,
-        por cada raiz, os filhos.
-        """
+    async def list_generations_for_audio(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
         audio_resultado = await self._get_audio_or_fail(audio_id, user_id)
         if isinstance(audio_resultado, Falha):
             return audio_resultado
@@ -271,12 +292,7 @@ class GenerationService:
         )
         return Sucesso(gens)
 
-    async def list_cuts_for_generation(
-        self,
-        generation_id: str,
-        user_id: str,
-    ) -> Resultado:
-        """Lista os cortes de uma geração."""
+    async def list_cuts_for_generation(self, generation_id: str, user_id: str) -> Resultado:
         parent_resultado = await self.get_generation(generation_id, user_id)
         if isinstance(parent_resultado, Falha):
             return parent_resultado
@@ -286,30 +302,21 @@ class GenerationService:
         )
         return Sucesso(cuts)
 
-    async def get_generation_audio_path(
-        self,
-        generation_id: str,
-        user_id: str,
-    ) -> Resultado:
-        """Devolve o Path absoluto do ficheiro de áudio de uma geração.
-
-        Falha se a geração não existir, ainda não tiver áudio
-        (status != COMPLETED) ou o ficheiro físico estiver perdido.
-        """
+    async def get_generation_audio_url(self, generation_id: str, user_id: str) -> Resultado:
         gen_resultado = await self.get_generation(generation_id, user_id)
         if isinstance(gen_resultado, Falha):
             return gen_resultado
         gen = gen_resultado.valor
-        if not gen.audio_file_path:
+        if not gen.audio_storage_key:
             return Falha(FicheiroGeracaoIndisponivel(
-                detalhe="A geração ainda não tem áudio disponível.",
+                detalhe="A geracao ainda nao tem audio disponivel.",
             ))
-        path = Path(gen.audio_file_path)
-        if not path.exists():
+        url = storage.get_presigned_url(gen.audio_storage_key)
+        if not url:
             return Falha(FicheiroGeracaoIndisponivel(
-                detalhe="O ficheiro de áudio da geração não foi encontrado em disco.",
+                detalhe="Nao foi possivel gerar URL de download para o audio da geracao.",
             ))
-        return Sucesso(path)
+        return Sucesso(url)
 
     async def cut_generation(
         self,
@@ -320,153 +327,169 @@ class GenerationService:
         output_dir: str,
         max_window_seconds: float = 45.0,
     ) -> Resultado:
-        """Cria um corte (clip) a partir de uma geração existente.
-
-        Passos:
-          1. Valida que a geração existe e é do utilizador.
-          2. Valida 0 <= inicio < fim, fim - inicio <= max_window.
-          3. Verifica que o ficheiro físico existe.
-          4. Corta o áudio para um novo ficheiro WAV em output_dir.
-          5. Persiste um novo registo `generations` com:
-                - parent_generation_id = id da geração original
-                - status = COMPLETED
-                - audio_file_path = caminho do novo ficheiro
-                - prompt = texto descritivo do corte
-        """
         if cortar_audio is None or obter_duracao_audio is None:
-            return Falha(WorkerIndisponivel(detalhe="Módulo de corte de áudio indisponível."))
+            return Falha(WorkerIndisponivel(detalhe="Modulo de corte de audio indisponivel."))
 
-        # 1) buscar geração pai + validar ownership
         parent_resultado = await self.get_generation(parent_generation_id, user_id)
         if isinstance(parent_resultado, Falha):
             return parent_resultado
         parent = parent_resultado.valor
 
-        # 2) validar intervalo
         if inicio_segundos < 0 or fim_segundos <= inicio_segundos:
-            return Falha(IntervaloCorteInvalido(
-                detalhe="O início tem de ser >= 0 e menor do que o fim.",
-            ))
+            return Falha(IntervaloCorteInvalido(detalhe="O inicio tem de ser >= 0 e menor do que o fim."))
         janela = fim_segundos - inicio_segundos
         if janela > max_window_seconds:
             return Falha(IntervaloCorteInvalido(
-                detalhe=f"O corte não pode ser maior do que {max_window_seconds:.0f} segundos.",
+                detalhe=f"O corte nao pode ser maior do que {max_window_seconds:.0f} segundos.",
             ))
 
-        # 3) verificar ficheiro físico do pai
-        if not parent.audio_file_path:
-            return Falha(FicheiroGeracaoIndisponivel(
-                detalhe="A geração pai não tem áudio gerado.",
-            ))
-        parent_path = Path(parent.audio_file_path)
-        if not parent_path.exists():
-            return Falha(FicheiroGeracaoIndisponivel(
-                detalhe="O áudio da geração pai não está em disco.",
-            ))
+        if not parent.audio_storage_key:
+            return Falha(FicheiroGeracaoIndisponivel(detalhe="A geracao pai nao tem audio gerado."))
 
-        # 4) corte físico em background thread
+        out_tmp = Path(tempfile.mktemp(suffix=".wav"))
         try:
-            duracao_total = await asyncio.to_thread(obter_duracao_audio, str(parent_path))
-        except Exception as e:
-            return Falha(FalhaProcessamentoAudio(operacao=f"obter_duracao: {e}"))
-        if inicio_segundos >= duracao_total:
-            return Falha(IntervaloCorteInvalido(
-                detalhe="O início está fora da duração do áudio.",
-            ))
-        # truncamos o fim à duração real, se necessário
-        fim_clamped = min(fim_segundos, duracao_total)
+            with storage.temp_download(parent.audio_storage_key) as parent_path:
+                try:
+                    duracao_total = await asyncio.to_thread(obter_duracao_audio, str(parent_path))
+                except Exception as e:
+                    return Falha(FalhaProcessamentoAudio(operacao=f"obter_duracao: {e}"))
 
-        out_dir = Path(output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        cut_uuid = uuid.uuid4()
-        out_path = out_dir / f"cut_{cut_uuid.hex[:12]}.wav"
+                if inicio_segundos >= duracao_total:
+                    return Falha(IntervaloCorteInvalido(detalhe="O inicio esta fora da duracao do audio."))
+                fim_clamped = min(fim_segundos, duracao_total)
 
-        ok = await asyncio.to_thread(
-            cortar_audio,
-            str(parent_path),
-            str(out_path),
-            float(inicio_segundos),
-            float(fim_clamped),
-        )
-        if not ok or not out_path.exists():
-            return Falha(FalhaProcessamentoAudio(operacao="corte_audio"))
+                ok = await asyncio.to_thread(
+                    cortar_audio,
+                    str(parent_path),
+                    str(out_tmp),
+                    float(inicio_segundos),
+                    float(fim_clamped),
+                )
 
-        # 5) persistir novo registo
-        new_generation_id = str(uuid.uuid4())
-        prompt_descricao = (
-            f"Corte de {parent.generation_id} "
-            f"({inicio_segundos:.2f}s–{fim_clamped:.2f}s)"
-        )
-        cut = await GenerationQueries.create_generation(
-            db=self.db,
-            generation_id=new_generation_id,
-            user_id=parent.user_id,
-            project_id=parent.project_id,
-            audio_file_id=parent.audio_file_id,  # mantém referência ao áudio raiz
-            prompt=prompt_descricao,
-            instrument=parent.instrument,
-            genre=parent.genre,
-            duration=int(fim_clamped - inicio_segundos),
-            tempo_override=parent.tempo_override,
-            parent_generation_id=parent.id,
-            status=GenerationStatusEnum.COMPLETED,
-            audio_file_path=str(out_path),
-        )
-        return Sucesso(cut)
+            if not ok or not out_tmp.exists():
+                return Falha(FalhaProcessamentoAudio(operacao="corte_audio"))
+
+            cut_uuid = uuid.uuid4()
+            cut_key = f"generations/cut_{cut_uuid.hex[:12]}.wav"
+            uploaded = storage.upload_file(str(out_tmp), cut_key)
+            if not uploaded:
+                return Falha(FalhaProcessamentoAudio(operacao="upload_r2_cut"))
+
+            prompt_descricao = (
+                f"Corte de {parent.id} "
+                f"({inicio_segundos:.2f}s-{fim_clamped:.2f}s)"
+            )
+            cut = await GenerationQueries.create_generation(
+                db=self.db,
+                gen_id=cut_uuid,
+                user_id=parent.user_id,
+                project_id=parent.project_id,
+                audio_file_id=parent.audio_file_id,
+                prompt=prompt_descricao,
+                instrument=parent.instrument,
+                genre=parent.genre,
+                duration=int(fim_clamped - inicio_segundos),
+                tempo_override=parent.tempo_override,
+                parent_generation_id=parent.id,
+                status=GenerationStatusEnum.COMPLETED,
+                audio_storage_key=cut_key,
+            )
+            return Sucesso(cut)
+        finally:
+            out_tmp.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
-    # Notação a partir de uma GERAÇÃO (em vez de um audio_file)
+    # Notacao a partir de uma GERACAO
     # ------------------------------------------------------------------
 
     async def generate_tablature_from_generation(
-        self,
-        generation_id: str,
-        user_id: str,
-        tablatura_dir: str,
+        self, generation_id: str, user_id: str, tablatura_dir: str,
     ) -> Resultado:
-        """Gera tablatura a partir do áudio físico de uma geração."""
-        path_resultado = await self.get_generation_audio_path(generation_id, user_id)
-        if isinstance(path_resultado, Falha):
-            return path_resultado
-        return await self._generate_tablature_from_path(path_resultado.valor, tablatura_dir)
+        """Despacha para o Celery worker (que tem basic_pitch + lilypond)."""
+        try:
+            from worker.tasks.generation_tasks import generate_tablature_task
+        except ImportError as e:
+            return Falha(WorkerIndisponivel(detalhe=str(e)))
+
+        gen_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(gen_resultado, Falha):
+            return gen_resultado
+        gen = gen_resultado.valor
+        if not gen.audio_storage_key:
+            return Falha(FicheiroGeracaoIndisponivel(detalhe="A geracao nao tem audio disponivel."))
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: generate_tablature_task.apply_async(
+                    kwargs={"generation_id": generation_id}
+                ).get(timeout=120)
+            )
+            r2_key = result["r2_key"]
+        except Exception as e:
+            return Falha(FalhaProcessamentoAudio(operacao=f"celery_tablature: {e}"))
+
+        out_dir = Path(tablatura_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        local_pdf = out_dir / f"{generation_id}_{uuid.uuid4().hex[:8]}_tablatura.pdf"
+        ok = storage.download_file(r2_key, str(local_pdf))
+        storage.delete_file(r2_key)
+        if not ok or not local_pdf.exists():
+            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
+        return Sucesso(str(local_pdf))
 
     async def generate_partitura_from_generation(
-        self,
-        generation_id: str,
-        user_id: str,
-        partitura_dir: str,
+        self, generation_id: str, user_id: str, partitura_dir: str,
     ) -> Resultado:
-        """Gera partitura a partir do áudio físico de uma geração."""
-        path_resultado = await self.get_generation_audio_path(generation_id, user_id)
-        if isinstance(path_resultado, Falha):
-            return path_resultado
-        return await self._generate_partitura_from_path(path_resultado.valor, partitura_dir)
+        """Despacha para o Celery worker (que tem basic_pitch)."""
+        try:
+            from worker.tasks.generation_tasks import generate_partitura_task
+        except ImportError as e:
+            return Falha(WorkerIndisponivel(detalhe=str(e)))
+
+        gen_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(gen_resultado, Falha):
+            return gen_resultado
+        gen = gen_resultado.valor
+        if not gen.audio_storage_key:
+            return Falha(FicheiroGeracaoIndisponivel(detalhe="A geracao nao tem audio disponivel."))
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: generate_partitura_task.apply_async(
+                    kwargs={"generation_id": generation_id}
+                ).get(timeout=120)
+            )
+            r2_key = result["r2_key"]
+        except Exception as e:
+            return Falha(FalhaProcessamentoAudio(operacao=f"celery_partitura: {e}"))
+
+        out_dir = Path(partitura_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        local_pdf = out_dir / f"{generation_id}_{uuid.uuid4().hex[:8]}_partitura.pdf"
+        ok = storage.download_file(r2_key, str(local_pdf))
+        storage.delete_file(r2_key)
+        if not ok or not local_pdf.exists():
+            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
+        return Sucesso(str(local_pdf))
 
     # ------------------------------------------------------------------
     # Helpers privados
     # ------------------------------------------------------------------
 
     async def _get_audio_or_fail(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
-        """Busca o áudio e verifica o dono. Não distingue "não existe" de "não é teu"
-        para prevenir enumeração de recursos."""
         audio = await AudioQueries.get_audio_file(db=self.db, audio_id=audio_id)
         if not audio or str(audio.user_id) != user_id:
             return Falha(AudioNaoEncontrado(audio_id=audio_id))
         return Sucesso(audio)
 
-    async def _get_audio_path_or_fail(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
-        """Busca o áudio, verifica o dono e confirma que o ficheiro existe em disco."""
+    async def _get_audio_s3_key_or_fail(self, audio_id: uuid.UUID, user_id: str) -> Resultado:
         resultado = await self._get_audio_or_fail(audio_id, user_id)
         if isinstance(resultado, Falha):
             return resultado
-        input_path = Path(resultado.valor.file_path)
-        if not input_path.exists():
-            return Falha(AudioNaoEncontrado(audio_id=audio_id))
-        return Sucesso(input_path)
+        return Sucesso(resultado.valor.storage_key)
 
     async def _criar_registo_geracao(
         self,
-        generation_id: str,
         user_id: str,
         project_id: uuid.UUID,
         audio_id: uuid.UUID,
@@ -476,10 +499,8 @@ class GenerationService:
         duration: Optional[int],
         tempo_override: Optional[int],
     ):
-        """Persiste o registo de geração com estado PENDING."""
         return await GenerationQueries.create_generation(
             db=self.db,
-            generation_id=generation_id,
             user_id=user_id,
             project_id=project_id,
             audio_file_id=audio_id,
@@ -491,7 +512,6 @@ class GenerationService:
         )
 
     async def _enfileirar_tarefa(self, generation, task, kwargs: dict) -> Resultado:
-        """Enfileira uma tarefa Celery e devolve Sucesso((generation, task_id)) ou Falha."""
         try:
             async_result = task.apply_async(kwargs=kwargs, retry=False)
         except Exception as e:
@@ -500,17 +520,12 @@ class GenerationService:
 
     @staticmethod
     def _apagar_ficheiros_fisicos(gen) -> None:
-        """Apaga os ficheiros físicos associados a uma geração, ignorando falhas individuais."""
-        for attr in ["audio_file_path", "midi_file_path", "partitura_file_path", "tablatura_file_path"]:
-            path_str = getattr(gen, attr, None)
-            if path_str:
-                try:
-                    Path(path_str).unlink(missing_ok=True)
-                except Exception as e:
-                    print(f"Aviso: não foi possível apagar {path_str}: {e}")
+        for attr in ["audio_storage_key", "midi_storage_key", "partitura_storage_key", "tablatura_storage_key"]:
+            s3_key = getattr(gen, attr, None)
+            if s3_key:
+                storage.delete_file(s3_key)
 
     async def _extrair_midi_async(self, input_path: Path, midi_path: Path) -> Resultado:
-        """Extrai MIDI a partir do áudio. Devolve Sucesso(midi_data) ou Falha."""
         midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(input_path), str(midi_path))
         ok, midi_data, _ = self._normalize_midi_extract_result(midi_result)
         if not ok:
@@ -518,7 +533,6 @@ class GenerationService:
         return Sucesso(midi_data)
 
     async def _aplicar_estilo_tablatura_async(self, ly_path: Path, midi_data) -> Resultado:
-        """Aplica dedilhado inteligente se disponível, caso contrário tablatura padrão."""
         notas_midi = extrair_lista_notas(midi_data) if midi_data else []
         dedilhado  = otimizar_tablatura(notas_midi) if notas_midi else None
         if dedilhado:
@@ -530,11 +544,9 @@ class GenerationService:
         return Sucesso(None)
 
     async def _compilar_pdf_com_fallback_async(self, midi_path: Path, ly_path: Path) -> Resultado:
-        """Compila o PDF com LilyPond. Se falhar, tenta fallback com tablatura simples."""
         if await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path)):
             return Sucesso(None)
 
-        # Fallback: regera o .ly com tablatura simples e tenta compilar de novo
         ly_path.unlink(missing_ok=True)
         if not await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path)):
             return Falha(FalhaProcessamentoAudio(operacao="conversao_midi_ly_fallback"))

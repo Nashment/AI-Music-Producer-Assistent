@@ -60,7 +60,7 @@ CREATE TABLE audio_files (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-    file_path VARCHAR(512) NOT NULL,
+    storage_key VARCHAR(512) NOT NULL,  -- chave R2/S3 (ex: audio/uuid_filename.mp3)
     file_size INTEGER,  -- bytes
     duration FLOAT,     -- segundos
     sample_rate INTEGER,
@@ -76,7 +76,6 @@ CREATE TABLE audio_files (
 -- ==========================================
 CREATE TABLE generations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    generation_id VARCHAR(128) UNIQUE NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     audio_file_id UUID REFERENCES audio_files(id) ON DELETE SET NULL,
@@ -93,12 +92,12 @@ CREATE TABLE generations (
     tempo_override INTEGER,
 
     -- Status and results
-    -- audio_file_path armazena o áudio final: instrumento isolado, BPM e tom corrigidos.
+    -- *_storage_key guarda a chave R2/S3 do ficheiro (não o URL presigned).
     status VARCHAR(20) DEFAULT 'pending',  -- pending, processing, completed, failed
-    audio_fi    le_path VARCHAR(512),
-    midi_file_path VARCHAR(512),
-    partitura_file_path VARCHAR(512),
-    tablatura_file_path VARCHAR(512),
+    audio_storage_key VARCHAR(512),
+    midi_storage_key VARCHAR(512),
+    partitura_storage_key VARCHAR(512),
+    tablatura_storage_key VARCHAR(512),
     error_message TEXT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -126,7 +125,6 @@ CREATE INDEX idx_audio_files_created_at ON audio_files(created_at DESC);
 CREATE INDEX idx_generations_user_id ON generations(user_id);
 CREATE INDEX idx_generations_project_id ON generations(project_id);
 CREATE INDEX idx_generations_status ON generations(status);
-CREATE INDEX idx_generations_generation_id ON generations(generation_id);
 CREATE INDEX idx_generations_created_at ON generations(created_at DESC);
 CREATE INDEX idx_generations_user_project ON generations(user_id, project_id);
 CREATE INDEX idx_generations_parent_id ON generations(parent_generation_id);

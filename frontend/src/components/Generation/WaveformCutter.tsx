@@ -111,7 +111,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         // 2. Buscar o blob do áudio e carregá-lo
         (async () => {
             try {
-                const url = await generationService.fetchGenerationAudioBlobUrl(generation.generation_id);
+                const url = await generationService.fetchGenerationAudioBlobUrl(generation.id);
                 if (cancelled) {
                     URL.revokeObjectURL(url);
                     return;
@@ -191,7 +191,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         // re-criadas a cada render aqui, o effect destrói e recria o
         // Wavesurfer em loop — gerando centenas de pedidos a /audio.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [generation.generation_id]);
+    }, [generation.id]);
 
     // -------------------------------------------------------------- handlers
     const togglePlay = () => {
