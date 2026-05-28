@@ -19,6 +19,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AppLayout from './components/Layout/AppLayout';
 import { ToastProvider } from './components/Layout/Toast';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { LanguageProvider } from './context/LanguageContext';
 
 type Page = {
     path: string;
@@ -60,10 +62,14 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-        <AuthProvider>
-            <ToastProvider>
-                <RouterProvider router={router} />
-            </ToastProvider>
-        </AuthProvider>
+        <LanguageProvider>
+            <ThemeProvider>
+                <AuthProvider>
+                    <ToastProvider>
+                        <RouterProvider router={router} />
+                    </ToastProvider>
+                </AuthProvider>
+            </ThemeProvider>
+        </LanguageProvider>
     </React.StrictMode>,
 );

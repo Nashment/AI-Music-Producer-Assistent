@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import useProjects from '../hooks/project/useProjects';
+import useLanguage from '../hooks/language/useLanguage';
 import ProjectList from '../components/Project/ProjectList';
 import ProjectForm from '../components/Project/ProjectForm';
 import PageHeader from '../components/Layout/PageHeader';
@@ -22,6 +23,7 @@ type SortKey = 'name' | 'tempo';
  */
 function ProjectsPage() {
     const { projects, loading, error, createProject, deleteProject } = useProjects();
+    const { t } = useLanguage();
     const toast = useToast();
 
     const [createOpen, setCreateOpen] = useState(false);
@@ -54,10 +56,10 @@ function ProjectsPage() {
         setCreating(true);
         try {
             await createProject(data as ProjectCreate);
-            toast.success('Projeto criado.');
+            toast.success(t.projects.created);
             setCreateOpen(false);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a criar projeto.'));
+            toast.error(describeError(err, t.projects.createError));
             throw err;
         } finally {
             setCreating(false);
@@ -69,10 +71,10 @@ function ProjectsPage() {
         setDeleting(true);
         try {
             await deleteProject(confirmDel.id);
-            toast.success('Projeto apagado.');
+            toast.success(t.projects.deleted);
             setConfirmDel(null);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a apagar projeto.'));
+            toast.error(describeError(err, t.projects.deleteError));
         } finally {
             setDeleting(false);
         }
@@ -81,11 +83,11 @@ function ProjectsPage() {
     return (
         <div className="projects">
             <PageHeader
-                title="Projetos"
-                description="Cada projeto agrupa áudios e gerações relacionados."
+                title={t.projects.title}
+                description={t.projects.description}
                 actions={
                     <button type="button" onClick={() => setCreateOpen(true)}>
-                        + Novo projeto
+                        {t.projects.newProject}
                     </button>
                 }
             />
@@ -93,22 +95,22 @@ function ProjectsPage() {
             <div className="projects-toolbar card">
                 <input
                     type="search"
-                    placeholder="Pesquisar por título ou descrição…"
+                    placeholder={t.projects.search}
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                 />
                 <select
                     value={sort}
                     onChange={e => setSort(e.target.value as SortKey)}
-                    aria-label="Ordenar"
+                    aria-label={t.projects.sortLabel}
                 >
-                    <option value="name">Ordenar: Nome</option>
-                    <option value="tempo">Ordenar: BPM</option>
+                    <option value="name">{t.projects.sortName}</option>
+                    <option value="tempo">{t.projects.sortTempo}</option>
                 </select>
             </div>
 
             {loading && projects.length === 0 ? (
-                <Spinner block label="A carregar projetos…" />
+                <Spinner block label={t.projects.loading} />
             ) : null}
 
             {error ? <p className="error-text">{error}</p> : null}
@@ -116,11 +118,11 @@ function ProjectsPage() {
             {!loading && projects.length === 0 && !error ? (
                 <EmptyState
                     icon="🎼"
-                    title="Ainda não tens projetos"
-                    description="Cria o teu primeiro projeto para começares a carregar áudios."
+                    title={t.projects.noProjects}
+                    description={t.projects.noProjectsDesc}
                     action={
                         <button type="button" onClick={() => setCreateOpen(true)}>
-                            + Criar projeto
+                            {t.projects.createProject}
                         </button>
                     }
                 />
@@ -129,8 +131,8 @@ function ProjectsPage() {
             {projects.length > 0 && visible.length === 0 ? (
                 <EmptyState
                     icon="🔍"
-                    title="Nenhum projeto bate com a pesquisa"
-                    description={`Não encontrei resultados para “${search}”.`}
+                    title={t.projects.noResults}
+                    description={t.projects.noResultsDesc.replace('{search}', search)}
                 />
             ) : null}
 
@@ -146,12 +148,12 @@ function ProjectsPage() {
 
             <Modal
                 open={createOpen}
-                title="Novo projeto"
+                title={t.projects.modalTitle}
                 onClose={() => !creating && setCreateOpen(false)}
             >
                 <ProjectForm
                     submitting={creating}
-                    submitLabel="Criar projeto"
+                    submitLabel={t.projects.createProject.replace('+ ', '')}
                     onSubmit={handleCreate}
                     onCancel={() => setCreateOpen(false)}
                 />
@@ -159,14 +161,15 @@ function ProjectsPage() {
 
             <ConfirmDialog
                 open={!!confirmDel}
-                title="Apagar projeto?"
+                title={t.projects.confirmDeleteTitle}
                 message={
                     <>
-                        Vais apagar <strong>{confirmDel?.title}</strong>. Os
-                        áudios e gerações associados também serão removidos.
+                        {t.projects.confirmDeletePrefix}{' '}
+                        <strong>{confirmDel?.title}</strong>.{' '}
+                        {t.projects.confirmDeleteMsg}
                     </>
                 }
-                confirmLabel="Apagar"
+                confirmLabel={t.projects.confirmDeleteLabel}
                 danger
                 busy={deleting}
                 onConfirm={handleDelete}

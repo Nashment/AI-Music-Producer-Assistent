@@ -74,7 +74,8 @@ services:
       redis:
         condition: service_healthy
 
-  # Celery Worker — imagem pesada (ML/audio), so rebuildar quando deps ML mudarem
+  # Celery Worker (geracao) — imagem pesada (ML/audio), so rebuildar quando deps ML mudarem
+  # Processa apenas a fila 'celery' (geracao Suno + pos-processamento).
   celery_worker:
     build:
       context: ..
@@ -87,10 +88,14 @@ services:
       GENERATIONS_AUDIO_DIR: /app/worker/generations/audio
       GENERATIONS_PARTITURA_DIR: /app/worker/generations/partitura
       GENERATIONS_TABLATURA_DIR: /app/worker/generations/tablatura
+      # Impede o TensorFlow de tentar detetar GPUs/CUDA (sem GPU no container).
+      # Sem isto, o TF bloqueia indefinidamente na primeira chamada ao basic_pitch.
+      CUDA_VISIBLE_DEVICES: ""
+      TF_CPP_MIN_LOG_LEVEL: "3"
     volumes:
       - ../backend:/app
       - ../generations:/app/generations
-    command: celery -A worker.celery_app:celery_app worker --pool=solo --loglevel=info
+    command: celery -A worker.celery_app:celery_app worker --pool=solo --queues=celery --loglevel=info
     restart: unless-stopped
     networks:
       - music_ai_network
@@ -102,6 +107,36 @@ services:
     # Em producao aumentar replicas conforme a carga; 1 chega para dev local
     # deploy:
     #   replicas: 4
+
+  # Celery Worker (notacao) — processa apenas a fila 'notation' (tablatura + partitura).
+  # Separado do worker de geracao para que tarefas rapidas (4-9s) nao fiquem
+  # bloqueadas atras de tarefas longas de geracao Suno (86-200s).
+  celery_worker_notation:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-music_user}:${DB_PASSWORD:-music_password}@postgres:5432/${DB_NAME:-music_ai_db}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      GENERATIONS_AUDIO_DIR: /app/worker/generations/audio
+      GENERATIONS_PARTITURA_DIR: /app/worker/generations/partitura
+      GENERATIONS_TABLATURA_DIR: /app/worker/generations/tablatura
+      CUDA_VISIBLE_DEVICES: ""
+      TF_CPP_MIN_LOG_LEVEL: "3"
+    volumes:
+      - ../backend:/app
+      - ../generations:/app/generations
+    command: celery -A worker.celery_app:celery_app worker --pool=solo --queues=notation --loglevel=info
+    restart: unless-stopped
+    networks:
+      - music_ai_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   # Frontend (build estatico Vite + Nginx)
   frontend:

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { userService } from '../services/user/userService';
 import useAuth from '../hooks/auth/useAuth';
+import useTheme from '../hooks/theme/useTheme';
+import useLanguage from '../hooks/language/useLanguage';
 import PageHeader from '../components/Layout/PageHeader';
 import ConfirmDialog from '../components/Layout/ConfirmDialog';
 import Spinner from '../components/Layout/Spinner';
@@ -15,6 +17,8 @@ import { useToast, describeError } from '../components/Layout/Toast';
  */
 function ProfilePage() {
     const { user, refresh, logout } = useAuth();
+    const { theme, toggleTheme } = useTheme();
+    const { t } = useLanguage();
     const navigate = useNavigate();
     const toast = useToast();
 
@@ -32,7 +36,7 @@ function ProfilePage() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!username.trim()) {
-            toast.error('Username não pode ser vazio.');
+            toast.error(t.profile.usernameEmpty);
             return;
         }
         if (!dirty) return;
@@ -40,9 +44,9 @@ function ProfilePage() {
         try {
             await userService.updateUsername(username.trim());
             await refresh();
-            toast.success('Username actualizado.');
+            toast.success(t.profile.usernameSaved);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a guardar.'));
+            toast.error(describeError(err, t.profile.saveError));
         } finally {
             setSaving(false);
         }
@@ -53,39 +57,39 @@ function ProfilePage() {
         try {
             await userService.deleteMe();
             logout();
-            toast.success('Conta apagada.');
+            toast.success(t.profile.accountDeleted);
             navigate('/login', { replace: true });
         } catch (err) {
-            toast.error(describeError(err, 'Erro a apagar conta.'));
+            toast.error(describeError(err, t.profile.accountDeleteError));
             setDeleting(false);
             setConfirmOpen(false);
         }
     };
 
-    if (!user) return <Spinner block label="A carregar perfil…" />;
+    if (!user) return <Spinner block label={t.profile.loading} />;
 
     return (
         <div className="profile">
             <PageHeader
-                title="Perfil"
-                description="Configura a tua conta."
+                title={t.profile.title}
+                description={t.profile.description}
                 backTo="/home"
-                backLabel="Home"
+                backLabel={t.profile.backLabel}
             />
 
             <section className="card profile-card">
-                <h3>Informação básica</h3>
+                <h3>{t.profile.basicInfo}</h3>
                 <form onSubmit={handleSave} className="profile-form">
                     <div className="field">
-                        <label htmlFor="username">Username</label>
+                        <label htmlFor="username">{t.profile.usernameLabel}</label>
                         <input
                             id="username"
                             value={username}
                             onChange={e => setUsername(e.target.value)}
-                            placeholder="Ex: joaomusic"
+                            placeholder={t.profile.usernamePlaceholder}
                         />
                         <span className="field-hint">
-                            ID interno: <span className="text-mono">{user.id}</span>
+                            {t.profile.internalId} <span className="text-mono">{user.id}</span>
                         </span>
                     </div>
 
@@ -96,40 +100,58 @@ function ProfilePage() {
                             onClick={() => setUsername(user.username)}
                             disabled={!dirty || saving}
                         >
-                            Reverter
+                            {t.profile.revert}
                         </button>
                         <button type="submit" disabled={!dirty || saving}>
-                            {saving ? 'A guardar…' : 'Guardar alterações'}
+                            {saving ? t.profile.saving : t.profile.saveChanges}
                         </button>
                     </div>
                 </form>
             </section>
 
+            <section className="card profile-card">
+                <h3>{t.profile.preferences}</h3>
+                <div className="profile-theme-row">
+                    <div className="profile-theme-info">
+                        <span className="profile-theme-label">{t.profile.theme}</span>
+                        <span className="profile-theme-desc text-muted text-sm">
+                            {theme === 'dark' ? t.profile.themeDark : t.profile.themeLight}
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        className={`theme-switch${theme === 'light' ? ' theme-switch--light' : ''}`}
+                        onClick={toggleTheme}
+                        aria-label={`Mudar para tema ${theme === 'dark' ? 'claro' : 'escuro'}`}
+                        role="switch"
+                        aria-checked={theme === 'light'}
+                    >
+                        <span className="theme-switch-track">
+                            <span className="theme-switch-icon theme-switch-icon--dark">🌙</span>
+                            <span className="theme-switch-icon theme-switch-icon--light">☀️</span>
+                        </span>
+                        <span className="theme-switch-thumb" />
+                    </button>
+                </div>
+            </section>
+
             <section className="card profile-danger">
-                <h3>Zona perigosa</h3>
-                <p className="text-muted text-sm">
-                    Apagar a conta remove o teu utilizador, projetos e áudios.
-                    Esta acção é irreversível.
-                </p>
+                <h3>{t.profile.dangerZone}</h3>
+                <p className="text-muted text-sm">{t.profile.dangerDesc}</p>
                 <button
                     type="button"
                     className="btn btn-danger-ghost"
                     onClick={() => setConfirmOpen(true)}
                 >
-                    Apagar conta
+                    {t.profile.deleteAccount}
                 </button>
             </section>
 
             <ConfirmDialog
                 open={confirmOpen}
-                title="Apagar conta?"
-                message={
-                    <>
-                        Esta acção é <strong>irreversível</strong>. Vais
-                        perder todos os projetos e áudios associados.
-                    </>
-                }
-                confirmLabel="Sim, apagar"
+                title={t.profile.confirmDeleteTitle}
+                message={t.profile.confirmDeleteMsg}
+                confirmLabel={t.profile.confirmDeleteLabel}
                 danger
                 busy={deleting}
                 onConfirm={handleDelete}

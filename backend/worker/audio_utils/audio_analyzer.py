@@ -87,7 +87,7 @@ def analisar_audio_completo(caminho_wav):
 
     print("A calcular os BPMs...")
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr, start_bpm=75)
-    bpm = tempo[0] if isinstance(tempo, np.ndarray) else tempo
+    bpm = float(np.atleast_1d(tempo)[0])
 
     print("A extrair a harmonia...")
     chroma = librosa.feature.chroma_cens(y=y, sr=sr, hop_length=4096)

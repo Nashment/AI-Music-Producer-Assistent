@@ -7,7 +7,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Dependencias de sistema minimas para o backend
-RUN apt-get update && apt-get install -y --no-install-recommends     libpq-dev     && rm -rf /var/lib/apt/lists/*
+# ffmpeg: necessario para o librosa decodificar MP3 (fallback audioread)
+# sem ffmpeg, o libmpg123 falha em ficheiros com tags ID3 grandes (>64KB)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Instalar dependencias Python (camada cacheada separada do codigo)
 COPY docker/requirements-api.txt ./requirements.txt

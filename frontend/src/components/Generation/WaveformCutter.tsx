@@ -3,6 +3,7 @@ import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin, { Region } from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import { generationService } from '../../services/generation/generationService';
 import { GenerationResult } from '../../services/generation/generationResponseTypes';
+import useLanguage from '../../hooks/language/useLanguage';
 import Spinner from '../Layout/Spinner';
 
 interface Props {
@@ -24,17 +25,10 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 /**
- * Visualizador estilo Audacity:
- *
- *   - Carrega o áudio da geração (Blob URL via /generation/{id}/audio).
- *   - Renderiza waveform com Wavesurfer.js v7.
- *   - Usa o plugin Regions para uma região arrastável/redimensionável,
- *     que representa o intervalo de corte (start..end).
- *   - Tem dois sliders sincronizados como input alternativo / numérico.
- *   - Garante que a janela nunca ultrapassa 45s (mesmo no plugin Regions).
- *   - Botão "Cortar" submete (inicio_segundos, fim_segundos).
+ * Visualizador estilo Audacity com Wavesurfer.js v7.
  */
 export function WaveformCutter({ generation, cutting, onCut }: Props) {
+    const { t } = useLanguage();
     const containerRef = useRef<HTMLDivElement | null>(null);
     const wsRef = useRef<WaveSurfer | null>(null);
     const regionsRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
@@ -48,21 +42,12 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    /**
-     * Sincroniza a região do waveform com os valores [start, end].
-     * É chamada quando o utilizador mexe nos sliders.
-     */
     const syncRegionToValues = useCallback((s: number, e: number) => {
         const r = regionRef.current;
         if (!r) return;
-        // Evita ciclos: a região disparará update; ignoramos-o comparando floats
         r.setOptions({ start: s, end: e });
     }, []);
 
-    /**
-     * Aplica a regra de janela máxima (45s) e duração total.
-     * Devolve o par [s, e] já válido.
-     */
     const enforceLimits = useCallback(
         (s: number, e: number, anchor: 'start' | 'end' = 'end'): [number, number] => {
             let ns = clamp(s, 0, duration);
@@ -79,7 +64,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         [duration],
     );
 
-    // ---------------------------------------------------------------- mount
     useEffect(() => {
         if (!containerRef.current) return;
         let cancelled = false;
@@ -90,7 +74,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         setEnd(0);
         setDuration(0);
 
-        // 1. Cria a instância base
         const regionsPlugin = RegionsPlugin.create();
         const ws = WaveSurfer.create({
             container: containerRef.current,
@@ -108,7 +91,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         wsRef.current = ws;
         regionsRef.current = regionsPlugin;
 
-        // 2. Buscar o blob do áudio e carregá-lo
         (async () => {
             try {
                 const url = await generationService.fetchGenerationAudioBlobUrl(generation.id);
@@ -119,12 +101,11 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                 blobUrlRef.current = url;
                 await ws.load(url);
             } catch (e: any) {
-                if (!cancelled) setError(e?.message ?? 'Erro a carregar o áudio.');
+                if (!cancelled) setError(e?.message ?? t.waveform.loadError);
                 setLoading(false);
             }
         })();
 
-        // 3. Eventos
         ws.on('ready', () => {
             if (cancelled) return;
             const dur = ws.getDuration();
@@ -134,7 +115,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
             setStart(s);
             setEnd(e);
 
-            // Cria região arrastável
             regionRef.current = regionsPlugin.addRegion({
                 start: s,
                 end: e,
@@ -149,10 +129,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         ws.on('pause', () => setPlaying(false));
         ws.on('finish', () => setPlaying(false));
 
-        // Quando o utilizador mexe na região (drag/resize). Os limites são
-        // calculados inline com `ws.getDuration()` em vez de chamar o
-        // `enforceLimits` do React — isso evita prender o effect num loop
-        // (cf. mount effect deps abaixo).
         regionsPlugin.on('region-updated', (r: Region) => {
             const dur = ws.getDuration() || 1;
             let ns = clamp(r.start, 0, dur);
@@ -170,7 +146,6 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
             setEnd(ne);
         });
 
-        // Cleanup
         return () => {
             cancelled = true;
             try {
@@ -186,20 +161,14 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                 blobUrlRef.current = null;
             }
         };
-        // IMPORTANTE: depender SÓ do generation_id. Se metermos
-        // `enforceLimits` (que depende de `duration`) ou outras callbacks
-        // re-criadas a cada render aqui, o effect destrói e recria o
-        // Wavesurfer em loop — gerando centenas de pedidos a /audio.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [generation.id]);
 
-    // -------------------------------------------------------------- handlers
     const togglePlay = () => {
         const ws = wsRef.current;
         if (!ws) return;
         if (playing) ws.pause();
         else {
-            // Toca apenas dentro da região seleccionada
             const r = regionRef.current;
             if (r) ws.setTime(r.start);
             ws.play();
@@ -232,10 +201,9 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
     return (
         <div className="waveform-cutter">
             <header>
-                <h3>Cortar geração</h3>
+                <h3>{t.waveform.title}</h3>
                 <p className="text-muted text-sm">
-                    Arrasta os bordos da região no espectro ou usa os
-                    sliders. Janela máxima: <strong>{MAX_WINDOW}s</strong>.
+                    {t.waveform.desc} <strong>{MAX_WINDOW}s</strong>.
                 </p>
             </header>
 
@@ -243,7 +211,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
 
             {loading ? (
                 <div className="waveform-loading">
-                    <Spinner size="sm" label="A carregar waveform…" />
+                    <Spinner size="sm" label={t.waveform.loadingWaveform} />
                 </div>
             ) : null}
 
@@ -253,10 +221,10 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                 <>
                     <div className="waveform-controls">
                         <button type="button" className="btn btn-secondary" onClick={togglePlay}>
-                            {playing ? '⏸ Pausa' : '▶ Reproduzir'}
+                            {playing ? t.waveform.pause : t.waveform.play}
                         </button>
                         <span className="text-muted text-sm">
-                            Duração total: {fmtTime(duration)} · janela actual:{' '}
+                            {t.waveform.totalDuration} {fmtTime(duration)} · {t.waveform.currentWindow}{' '}
                             <strong className={exceeds ? 'error-text' : ''}>{fmtTime(window)}</strong>
                         </span>
                     </div>
@@ -265,7 +233,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                         <div className="waveform-sliders">
                             <div className="field">
                                 <label htmlFor="cut-start">
-                                    Início — <span className="text-mono">{fmtTime(start)}</span>
+                                    {t.waveform.startLabel} — <span className="text-mono">{fmtTime(start)}</span>
                                 </label>
                                 <input
                                     id="cut-start"
@@ -279,7 +247,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                             </div>
                             <div className="field">
                                 <label htmlFor="cut-end">
-                                    Fim — <span className="text-mono">{fmtTime(end)}</span>
+                                    {t.waveform.endLabel} — <span className="text-mono">{fmtTime(end)}</span>
                                 </label>
                                 <input
                                     id="cut-end"
@@ -298,7 +266,7 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                             className="btn btn-block"
                             disabled={cutting || end <= start || exceeds}
                         >
-                            {cutting ? 'A cortar…' : '✂ Criar corte'}
+                            {cutting ? t.waveform.cutting : t.waveform.cut}
                         </button>
                     </form>
                 </>

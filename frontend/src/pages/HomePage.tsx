@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import useAuth from '../hooks/auth/useAuth';
+import useLanguage from '../hooks/language/useLanguage';
 import { projectService } from '../services/project/projectService';
 import { ProjectResponse } from '../services/project/projectResponseTypes';
 import Spinner from '../components/Layout/Spinner';
@@ -14,24 +15,25 @@ import EmptyState from '../components/Layout/EmptyState';
  */
 function HomePage() {
     const { user } = useAuth();
+    const { t } = useLanguage();
     const [projects, setProjects] = useState<ProjectResponse[] | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        document.title = 'Home — Music AI';
+        document.title = t.home.title;
         let cancelled = false;
         (async () => {
             try {
                 const data = await projectService.listProjects();
                 if (!cancelled) setProjects(data);
             } catch (e: any) {
-                if (!cancelled) setError(e?.detail ?? 'Erro a carregar projetos.');
+                if (!cancelled) setError(e?.detail ?? t.home.loadError);
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [t]);
 
     const recent = (projects ?? []).slice(-3).reverse();
 
@@ -39,56 +41,49 @@ function HomePage() {
         <div className="home">
             <section className="home-hero">
                 <div>
-                    <h1>Olá, {user?.username ?? 'músico'} 👋</h1>
-                    <p className="text-soft">
-                        Pronto para a tua próxima ideia? Cria um projeto, faz
-                        upload de áudio e deixa a análise tratar do resto.
-                    </p>
+                    <h1>{t.home.greeting.replace('{name}', user?.username ?? 'músico')}</h1>
+                    <p className="text-soft">{t.home.subtitle}</p>
                 </div>
 
                 <div className="home-stats">
                     <div className="home-stat-card">
-                        <span className="home-stat-label">Projetos</span>
+                        <span className="home-stat-label">{t.home.projects}</span>
                         <span className="home-stat-value">
                             {projects === null ? '—' : projects.length}
                         </span>
                     </div>
                     <Link to="/projects" className="btn btn-secondary">
-                        Ver todos →
+                        {t.home.viewAll}
                     </Link>
                 </div>
             </section>
 
             <section className="home-quick">
-                <h2>Atalhos</h2>
+                <h2>{t.home.shortcuts}</h2>
                 <div className="home-quick-grid">
                     <Link to="/projects" className="home-quick-card">
                         <span className="home-quick-icon">🎼</span>
-                        <span className="home-quick-title">Os meus projetos</span>
-                        <span className="home-quick-desc">
-                            Vê e gere as tuas sessões de trabalho.
-                        </span>
+                        <span className="home-quick-title">{t.home.myProjects}</span>
+                        <span className="home-quick-desc">{t.home.myProjectsDesc}</span>
                     </Link>
                     <Link to="/profile" className="home-quick-card">
                         <span className="home-quick-icon">👤</span>
-                        <span className="home-quick-title">Perfil</span>
-                        <span className="home-quick-desc">
-                            Edita o teu username ou apaga conta.
-                        </span>
+                        <span className="home-quick-title">{t.nav.profile}</span>
+                        <span className="home-quick-desc">{t.home.profileDesc}</span>
                     </Link>
                 </div>
             </section>
 
             <section className="home-recent">
                 <div className="section-title">
-                    <h2>Projetos recentes</h2>
+                    <h2>{t.home.recentProjects}</h2>
                     <Link to="/projects" className="text-sm">
-                        Ver todos →
+                        {t.home.viewAll}
                     </Link>
                 </div>
 
                 {projects === null && !error ? (
-                    <Spinner block label="A carregar…" />
+                    <Spinner block label={t.home.loading} />
                 ) : null}
 
                 {error ? <p className="error-text">{error}</p> : null}
@@ -96,11 +91,11 @@ function HomePage() {
                 {projects && projects.length === 0 ? (
                     <EmptyState
                         icon="🎼"
-                        title="Ainda sem projetos"
-                        description="Cria o teu primeiro projeto para começar a carregar áudios."
+                        title={t.home.noProjects}
+                        description={t.home.noProjectsDesc}
                         action={
                             <Link to="/projects" className="btn">
-                                Criar projeto
+                                {t.home.createProject}
                             </Link>
                         }
                     />
@@ -114,7 +109,7 @@ function HomePage() {
                                     <div>
                                         <strong>{p.title}</strong>
                                         <p className="text-muted text-sm">
-                                            {p.description || 'sem descrição'}
+                                            {p.description || t.home.noDescription}
                                         </p>
                                     </div>
                                     <span className="badge badge-primary">

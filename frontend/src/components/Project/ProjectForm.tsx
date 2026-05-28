@@ -4,6 +4,7 @@ import {
     ProjectResponse,
     ProjectUpdate,
 } from '../../services/project/projectResponseTypes';
+import useLanguage from '../../hooks/language/useLanguage';
 
 interface Props {
     /** Quando passado, o form arranca preenchido em modo edicao. */
@@ -25,6 +26,7 @@ export function ProjectForm({
     onSubmit,
     onCancel,
 }: Props) {
+    const { t } = useLanguage();
     const [title, setTitle] = useState(initial?.title ?? '');
     const [description, setDescription] = useState(initial?.description ?? '');
     const [tempo, setTempo] = useState<number>(initial?.tempo ?? 120);
@@ -40,11 +42,11 @@ export function ProjectForm({
         e.preventDefault();
         setError(null);
         if (!title.trim()) {
-            setError('O título é obrigatório.');
+            setError(t.projectForm.titleRequired);
             return;
         }
         if (tempo < 1 || tempo > 400) {
-            setError('Tempo (BPM) tem de estar entre 1 e 400.');
+            setError(t.projectForm.tempoRange);
             return;
         }
         try {
@@ -54,35 +56,35 @@ export function ProjectForm({
                 tempo,
             });
         } catch (err: any) {
-            setError(err?.detail ?? 'Erro ao guardar.');
+            setError(err?.detail ?? t.projectForm.saveError);
         }
     };
 
     return (
         <form className="project-form" onSubmit={handleSubmit}>
             <div className="field">
-                <label htmlFor="project-title">Título</label>
+                <label htmlFor="project-title">{t.projectForm.titleLabel}</label>
                 <input
                     id="project-title"
                     value={title}
                     onChange={e => setTitle(e.target.value)}
-                    placeholder="Ex: Demo Maio"
+                    placeholder={t.projectForm.titlePlaceholder}
                     autoFocus
                 />
             </div>
 
             <div className="field">
-                <label htmlFor="project-description">Descrição</label>
+                <label htmlFor="project-description">{t.projectForm.descLabel}</label>
                 <textarea
                     id="project-description"
                     value={description}
                     onChange={e => setDescription(e.target.value)}
-                    placeholder="O que estás a tentar fazer?"
+                    placeholder={t.projectForm.descPlaceholder}
                 />
             </div>
 
             <div className="field">
-                <label htmlFor="project-tempo">Tempo (BPM)</label>
+                <label htmlFor="project-tempo">{t.projectForm.tempoLabel}</label>
                 <input
                     id="project-tempo"
                     type="number"
@@ -91,9 +93,7 @@ export function ProjectForm({
                     value={tempo}
                     onChange={e => setTempo(Number(e.target.value))}
                 />
-                <span className="field-hint">
-                    Usado como referência para análises e geração.
-                </span>
+                <span className="field-hint">{t.projectForm.tempoHint}</span>
             </div>
 
             {error ? <p className="error-text">{error}</p> : null}
@@ -106,11 +106,11 @@ export function ProjectForm({
                         onClick={onCancel}
                         disabled={submitting}
                     >
-                        Cancelar
+                        {t.projectForm.cancel}
                     </button>
                 ) : null}
                 <button type="submit" disabled={submitting}>
-                    {submitting ? 'A guardar…' : submitLabel ?? 'Guardar'}
+                    {submitting ? t.projectForm.saving : (submitLabel ?? t.projectForm.save)}
                 </button>
             </div>
         </form>

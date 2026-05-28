@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import useLanguage from '../../hooks/language/useLanguage';
 
 interface Props {
     onUpload: (file: File) => Promise<unknown>;
@@ -13,17 +14,21 @@ const MAX_BYTES = 50 * 1024 * 1024; // backend limita a 50MB
  * antes de chamar o callback (que faz o pedido multipart).
  */
 export function AudioUpload({ onUpload, uploading }: Props) {
+    const { t } = useLanguage();
     const inputRef = useRef<HTMLInputElement | null>(null);
     const [drag, setDrag] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const validate = (file: File): string | null => {
         if (file.size > MAX_BYTES) {
-            return `Ficheiro demasiado grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Limite: 50 MB.`;
+            return t.audioUpload.tooLarge.replace(
+                '{size}',
+                (file.size / 1024 / 1024).toFixed(1),
+            );
         }
         const lower = file.name.toLowerCase();
         if (!lower.endsWith('.mp3') && !lower.endsWith('.wav')) {
-            return 'Apenas .mp3 ou .wav são aceites.';
+            return t.audioUpload.invalidFormat;
         }
         return null;
     };
@@ -72,13 +77,9 @@ export function AudioUpload({ onUpload, uploading }: Props) {
                 <div className="audio-upload-content">
                     <span className="audio-upload-icon">🎧</span>
                     <span className="audio-upload-title">
-                        {uploading
-                            ? 'A carregar e analisar…'
-                            : 'Arrasta um áudio ou clica para escolher'}
+                        {uploading ? t.audioUpload.busy : t.audioUpload.idle}
                     </span>
-                    <span className="audio-upload-hint">
-                        .mp3 ou .wav até 50 MB
-                    </span>
+                    <span className="audio-upload-hint">{t.audioUpload.hint}</span>
                 </div>
             </label>
 

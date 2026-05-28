@@ -170,7 +170,8 @@ class GenerationService:
         try:
             result = await asyncio.to_thread(
                 lambda: generate_tablature_from_audio_key_task.apply_async(
-                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)}
+                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)},
+                    queue="notation",
                 ).get(timeout=120)
             )
             r2_key = result["r2_key"]
@@ -201,7 +202,8 @@ class GenerationService:
         try:
             result = await asyncio.to_thread(
                 lambda: generate_partitura_from_audio_key_task.apply_async(
-                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)}
+                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)},
+                    queue="notation",
                 ).get(timeout=120)
             )
             r2_key = result["r2_key"]
@@ -421,7 +423,8 @@ class GenerationService:
         try:
             result = await asyncio.to_thread(
                 lambda: generate_tablature_task.apply_async(
-                    kwargs={"generation_id": generation_id}
+                    kwargs={"generation_id": generation_id},
+                    queue="notation",
                 ).get(timeout=120)
             )
             r2_key = result["r2_key"]
@@ -456,7 +459,8 @@ class GenerationService:
         try:
             result = await asyncio.to_thread(
                 lambda: generate_partitura_task.apply_async(
-                    kwargs={"generation_id": generation_id}
+                    kwargs={"generation_id": generation_id},
+                    queue="notation",
                 ).get(timeout=120)
             )
             r2_key = result["r2_key"]

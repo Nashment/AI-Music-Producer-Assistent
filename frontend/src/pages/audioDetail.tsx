@@ -4,6 +4,7 @@ import { audioService } from '../services/audio/audioService';
 import { AudioAnalysisResponse } from '../services/audio/audioResponseTypes';
 import { GenerationResult, isCut } from '../services/generation/generationResponseTypes';
 import useAudioGenerations from '../hooks/generation/useAudioGenerations';
+import useLanguage from '../hooks/language/useLanguage';
 import AudioPlayer from '../components/Audio/AudioPlayer';
 import GenerateMusicPanel from '../components/Generation/GenerateMusicPanel';
 import WaveformCutter from '../components/Generation/WaveformCutter';
@@ -27,22 +28,12 @@ function fmtDuration(s: number): string {
 /**
  * /projects/:projectId/audio/:audioId
  *
- * Layout em 2 colunas + painel direito multi-modo:
- *
- *   ┌───────────────────────────┬──────────────────────────────────┐
- *   │  Info do áudio + player   │  Painel direito (varia)          │
- *   │  Árvore de gerações       │   - nada selecionado: Gerar      │
- *   │   ▾ Geração #1            │   - geração: Wavesurfer + cortar │
- *   │     ✂ Corte A             │   - corte: Partitura/Tablatura   │
- *   │   ▾ Geração #2            │                                  │
- *   └───────────────────────────┴──────────────────────────────────┘
- *
- * O selectedId é o `generation_id` (string) — comum a gerações e cortes
- * porque ambos vivem na mesma tabela `generations`.
+ * Layout em 2 colunas + painel direito multi-modo.
  */
 function AudioDetailPage() {
     const { projectId, audioId } = useParams<{ projectId: string; audioId: string }>();
     const navigate = useNavigate();
+    const { t } = useLanguage();
     const toast = useToast();
 
     // ----- estado: áudio (original) ------------------------------------
@@ -67,7 +58,7 @@ function AudioDetailPage() {
                 const data = await audioService.getAudioAnalysis(audioId);
                 if (!cancelled) setAudio(data);
             } catch (e: any) {
-                if (!cancelled) setError(e?.detail ?? 'Erro a carregar áudio.');
+                if (!cancelled) setError(e?.detail ?? t.audioDetail.loadError);
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -75,7 +66,7 @@ function AudioDetailPage() {
         return () => {
             cancelled = true;
         };
-    }, [audioId]);
+    }, [audioId, t]);
 
     // ----- procurar a geração/corte seleccionado na árvore ---------------
     const selected: GenerationResult | null = useMemo(() => {
@@ -92,9 +83,9 @@ function AudioDetailPage() {
     const handleSubmitGeneration = async (req: Parameters<typeof gens.submitGeneration>[0]) => {
         try {
             await gens.submitGeneration(req);
-            toast.success('Pedido de geração submetido. A processar…');
+            toast.success(t.audioDetail.generationSubmitted);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a submeter geração.'));
+            toast.error(describeError(err, t.audioDetail.generationError));
         }
     };
 
@@ -102,10 +93,10 @@ function AudioDetailPage() {
         if (!selected) return;
         try {
             const cut = await gens.cutGeneration(selected.id, params);
-            toast.success('Corte criado.');
+            toast.success(t.audioDetail.cutCreated);
             setSelectedId(cut.id);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a cortar.'));
+            toast.error(describeError(err, t.audioDetail.cutError));
         }
     };
 
@@ -114,16 +105,16 @@ function AudioDetailPage() {
         setDeleting(true);
         try {
             await audioService.deleteAudio(audioId);
-            toast.success('Áudio apagado.');
+            toast.success(t.audioDetail.audioDeleted);
             navigate(`/projects/${projectId}`, { replace: true });
         } catch (err) {
-            toast.error(describeError(err, 'Erro a apagar áudio.'));
+            toast.error(describeError(err, t.audioDetail.audioDeleteError));
             setDeleting(false);
             setConfirmDel(false);
         }
     };
 
-    if (loading) return <Spinner block label="A carregar áudio…" />;
+    if (loading) return <Spinner block label={t.audioDetail.loading} />;
     if (error) return <p className="error-text">{error}</p>;
     if (!audio || !projectId || !audioId) return null;
 
@@ -133,14 +124,14 @@ function AudioDetailPage() {
                 title={basename(audio.storage_key)}
                 description={`${fmtDuration(audio.duration)} · ${audio.sample_rate} Hz`}
                 backTo={`/projects/${projectId}`}
-                backLabel="Projeto"
+                backLabel={t.audioDetail.back}
                 actions={
                     <button
                         type="button"
                         className="btn btn-danger-ghost"
                         onClick={() => setConfirmDel(true)}
                     >
-                        Apagar áudio
+                        {t.audioDetail.deleteAudio}
                     </button>
                 }
             />
@@ -149,17 +140,17 @@ function AudioDetailPage() {
                 {/* ---------------- ESQUERDA ---------------- */}
                 <aside className="audio-workspace-left">
                     <section className="card audio-meta-card">
-                        <h3>Áudio original</h3>
+                        <h3>{t.audioDetail.originalAudio}</h3>
                         <dl className="audio-meta-dl">
-                            <dt>Duração</dt>
+                            <dt>{t.audioDetail.duration}</dt>
                             <dd>{audio.duration.toFixed(2)} s</dd>
-                            <dt>Sample rate</dt>
+                            <dt>{t.audioDetail.sampleRate}</dt>
                             <dd>{audio.sample_rate} Hz</dd>
-                            <dt>BPM</dt>
+                            <dt>{t.audioDetail.bpm}</dt>
                             <dd>{audio.bpm ?? '—'}</dd>
-                            <dt>Tom</dt>
+                            <dt>{t.audioDetail.key}</dt>
                             <dd>{audio.key ?? '—'}</dd>
-                            <dt>Compasso</dt>
+                            <dt>{t.audioDetail.timeSignature}</dt>
                             <dd>{audio.time_signature ?? '—'}</dd>
                         </dl>
                         <AudioPlayer audioId={audio.id} fileName={basename(audio.storage_key)} />
@@ -167,7 +158,7 @@ function AudioDetailPage() {
 
                     <section className="card audio-tree-card">
                         <header className="section-title">
-                            <h3>Gerações</h3>
+                            <h3>{t.audioDetail.generations}</h3>
                             {gens.loading ? <Spinner size="sm" /> : null}
                         </header>
                         {gens.error ? <p className="error-text">{gens.error}</p> : null}
@@ -182,7 +173,7 @@ function AudioDetailPage() {
                                 className="btn btn-ghost btn-sm audio-tree-clear"
                                 onClick={() => setSelectedId(null)}
                             >
-                                ← Limpar seleção
+                                {t.audioDetail.clearSelection}
                             </button>
                         ) : null}
                     </section>
@@ -220,9 +211,9 @@ function AudioDetailPage() {
 
             <ConfirmDialog
                 open={confirmDel}
-                title="Apagar áudio?"
-                message="O ficheiro será removido do disco e da base de dados, junto com todas as gerações e cortes associados."
-                confirmLabel="Apagar"
+                title={t.audioDetail.confirmDeleteTitle}
+                message={t.audioDetail.confirmDeleteMsg}
+                confirmLabel={t.audioDetail.confirmDeleteLabel}
                 danger
                 busy={deleting}
                 onConfirm={handleDelete}

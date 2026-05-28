@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { audioService } from '../../services/audio/audioService';
+import useLanguage from '../../hooks/language/useLanguage';
 import Spinner from '../Layout/Spinner';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
  * Tambem expomos um botao para descarregar o ficheiro original (mesmo blob).
  */
 export function AudioPlayer({ audioId, fileName }: Props) {
+    const { t } = useLanguage();
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function AudioPlayer({ audioId, fileName }: Props) {
             const url = await audioService.fetchAudioBlobUrl(audioId);
             setBlobUrl(url);
         } catch (e: any) {
-            setError(e?.message ?? 'Não foi possível obter o áudio.');
+            setError(e?.message ?? t.audioPlayer.loadError);
         } finally {
             setLoading(false);
         }
@@ -43,16 +45,13 @@ export function AudioPlayer({ audioId, fileName }: Props) {
             {!blobUrl ? (
                 <div className="audio-player-placeholder">
                     <div>
-                        <p className="text-soft">
-                            O áudio só é descarregado quando carregares
-                            "Carregar". Útil em ligações lentas.
-                        </p>
+                        <p className="text-soft">{t.audioPlayer.lazyHint}</p>
                     </div>
                     <button type="button" onClick={load} disabled={loading}>
                         {loading ? (
-                            <Spinner size="sm" label="A carregar…" />
+                            <Spinner size="sm" label={t.audioPlayer.loadingLabel} />
                         ) : (
-                            '▶ Carregar áudio'
+                            t.audioPlayer.loadBtn
                         )}
                     </button>
                 </div>
@@ -64,7 +63,7 @@ export function AudioPlayer({ audioId, fileName }: Props) {
                         download={fileName}
                         className="btn btn-secondary btn-sm"
                     >
-                        ⬇ Download original
+                        {t.audioPlayer.downloadBtn}
                     </a>
                 </>
             )}

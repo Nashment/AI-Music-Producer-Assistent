@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import useProject from '../hooks/project/useProject';
 import useAudios from '../hooks/audio/useAudios';
+import useLanguage from '../hooks/language/useLanguage';
 import AudioList from '../components/Audio/AudioList';
 import AudioUpload from '../components/Audio/AudioUpload';
 import PageHeader from '../components/Layout/PageHeader';
@@ -25,6 +26,7 @@ import {
 function ProjectDetailPage() {
     const { projectId } = useParams<{ projectId: string }>();
     const navigate = useNavigate();
+    const { t } = useLanguage();
     const toast = useToast();
 
     const { project, loading, error, updateProject, deleteProject } =
@@ -40,7 +42,7 @@ function ProjectDetailPage() {
     const [confirmDelAudioId, setConfirmDelAudioId] = useState<string | null>(null);
     const [deletingAudio, setDeletingAudio] = useState(false);
 
-    if (loading && !project) return <Spinner block label="A carregar projeto…" />;
+    if (loading && !project) return <Spinner block label={t.projectDetail.loading} />;
     if (error) return <p className="error-text">{error}</p>;
     if (!project) return null;
 
@@ -48,10 +50,10 @@ function ProjectDetailPage() {
         setEditing(true);
         try {
             await updateProject(project.id, data as ProjectUpdate);
-            toast.success('Projeto actualizado.');
+            toast.success(t.projectDetail.updated);
             setEditOpen(false);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a actualizar.'));
+            toast.error(describeError(err, t.projectDetail.updateError));
             throw err;
         } finally {
             setEditing(false);
@@ -62,10 +64,10 @@ function ProjectDetailPage() {
         setDeletingProject(true);
         try {
             await deleteProject(project.id);
-            toast.success('Projeto apagado.');
+            toast.success(t.projectDetail.projectDeleted);
             navigate('/projects', { replace: true });
         } catch (err) {
-            toast.error(describeError(err, 'Erro a apagar projeto.'));
+            toast.error(describeError(err, t.projectDetail.projectDeleteError));
             setDeletingProject(false);
             setConfirmDelProject(false);
         }
@@ -74,10 +76,10 @@ function ProjectDetailPage() {
     const handleUpload = async (file: File) => {
         try {
             const a = await audios.uploadAudio(file);
-            toast.success(`Áudio "${file.name}" carregado.`);
+            toast.success(t.projectDetail.audioUploaded.replace('{name}', file.name));
             return a;
         } catch (err) {
-            toast.error(describeError(err, 'Falha no upload.'));
+            toast.error(describeError(err, t.projectDetail.uploadError));
             throw err;
         }
     };
@@ -87,10 +89,10 @@ function ProjectDetailPage() {
         setDeletingAudio(true);
         try {
             await audios.deleteAudio(confirmDelAudioId);
-            toast.success('Áudio apagado.');
+            toast.success(t.projectDetail.audioDeleted);
             setConfirmDelAudioId(null);
         } catch (err) {
-            toast.error(describeError(err, 'Erro a apagar áudio.'));
+            toast.error(describeError(err, t.projectDetail.audioDeleteError));
         } finally {
             setDeletingAudio(false);
         }
@@ -100,9 +102,9 @@ function ProjectDetailPage() {
         <div className="project-detail">
             <PageHeader
                 title={project.title}
-                description={project.description || 'sem descrição'}
+                description={project.description || t.projectDetail.noDescription}
                 backTo="/projects"
-                backLabel="Projetos"
+                backLabel={t.projectDetail.back}
                 actions={
                     <>
                         <span className="badge badge-primary">{project.tempo} BPM</span>
@@ -111,14 +113,14 @@ function ProjectDetailPage() {
                             className="btn btn-secondary"
                             onClick={() => setEditOpen(true)}
                         >
-                            Editar
+                            {t.projectDetail.edit}
                         </button>
                         <button
                             type="button"
                             className="btn btn-danger-ghost"
                             onClick={() => setConfirmDelProject(true)}
                         >
-                            Apagar
+                            {t.projectDetail.delete}
                         </button>
                     </>
                 }
@@ -126,9 +128,9 @@ function ProjectDetailPage() {
 
             <section className="card project-audio-panel">
                 <div className="section-title">
-                    <h2>Áudios</h2>
+                    <h2>{t.projectDetail.audios}</h2>
                     <span className="text-muted text-sm">
-                        {audios.audios.length} ficheiro(s) · upload .mp3 / .wav até 50MB
+                        {audios.audios.length} {t.projectDetail.audiosLoading.includes('ficheiro') ? 'ficheiro(s)' : 'file(s)'} · upload .mp3 / .wav até 50MB
                     </span>
                 </div>
 
@@ -142,14 +144,14 @@ function ProjectDetailPage() {
                 ) : null}
 
                 {audios.loading && audios.audios.length === 0 ? (
-                    <Spinner block label="A carregar áudios…" />
+                    <Spinner block label={t.projectDetail.audiosLoading} />
                 ) : null}
 
                 {!audios.loading && audios.audios.length === 0 ? (
                     <EmptyState
                         icon="🎧"
-                        title="Sem áudios neste projeto"
-                        description="Faz upload de um .mp3 ou .wav para o backend analisar."
+                        title={t.projectDetail.noAudios}
+                        description={t.projectDetail.noAudiosDesc}
                     />
                 ) : (
                     <AudioList
@@ -162,13 +164,13 @@ function ProjectDetailPage() {
 
             <Modal
                 open={editOpen}
-                title="Editar projeto"
+                title={t.projectDetail.editModal}
                 onClose={() => !editing && setEditOpen(false)}
             >
                 <ProjectForm
                     initial={project}
                     submitting={editing}
-                    submitLabel="Guardar alterações"
+                    submitLabel={t.projectDetail.saveChanges}
                     onSubmit={handleEdit}
                     onCancel={() => setEditOpen(false)}
                 />
@@ -176,14 +178,15 @@ function ProjectDetailPage() {
 
             <ConfirmDialog
                 open={confirmDelProject}
-                title="Apagar projeto?"
+                title={t.projectDetail.confirmDeleteProject}
                 message={
                     <>
-                        Vais apagar <strong>{project.title}</strong>. Áudios e
-                        gerações associados também serão removidos.
+                        {t.projects.confirmDeletePrefix}{' '}
+                        <strong>{project.title}</strong>.{' '}
+                        {t.projectDetail.confirmDeleteProjectMsg}
                     </>
                 }
-                confirmLabel="Apagar"
+                confirmLabel={t.projectDetail.confirmDeleteLabel}
                 danger
                 busy={deletingProject}
                 onConfirm={handleDeleteProject}
@@ -192,9 +195,9 @@ function ProjectDetailPage() {
 
             <ConfirmDialog
                 open={!!confirmDelAudioId}
-                title="Apagar áudio?"
-                message="O ficheiro será removido do disco e da base de dados."
-                confirmLabel="Apagar"
+                title={t.projectDetail.confirmDeleteAudio}
+                message={t.projectDetail.confirmDeleteAudioMsg}
+                confirmLabel={t.projectDetail.confirmDeleteLabel}
                 danger
                 busy={deletingAudio}
                 onConfirm={handleDeleteAudio}

@@ -15,3 +15,104 @@
     border-color: rgba(239, 91, 107, 0.3);
 }
 .profile-danger h3 { color: var(--danger); }
+
+/* ---------------------------------------------------------------------------
+ * Theme switch row
+ * ------------------------------------------------------------------------- */
+.profile-theme-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-2) 0;
+}
+
+.profile-theme-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.profile-theme-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-soft);
+}
+
+.profile-theme-desc {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+/* Switch container */
+.theme-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* Track (fundo do toggle) */
+.theme-switch-track {
+    position: relative;
+    width: 56px;
+    height: 28px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 6px;
+    transition: background 220ms ease, border-color 220ms ease;
+}
+
+.theme-switch--light .theme-switch-track {
+    background: var(--primary-soft);
+    border-color: rgba(124, 92, 255, 0.4);
+}
+
+/* Ícones dentro da track */
+.theme-switch-icon {
+    font-size: 13px;
+    line-height: 1;
+    transition: opacity 220ms ease;
+    user-select: none;
+}
+.theme-switch-icon--dark  { opacity: 1; }
+.theme-switch-icon--light { opacity: 0.4; }
+
+.theme-switch--light .theme-switch-icon--dark  { opacity: 0.4; }
+.theme-switch--light .theme-switch-icon--light { opacity: 1; }
+
+/* Thumb deslizante */
+.theme-switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: var(--text-soft);
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm);
+    transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background 220ms ease;
+}
+
+.theme-switch--light .theme-switch-thumb {
+    transform: translateX(28px);
+    background: var(--primary);
+}
+
+.theme-switch:hover .theme-switch-track {
+    border-color: var(--primary);
+}
+
+.theme-switch:focus-visible .theme-switch-track {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+

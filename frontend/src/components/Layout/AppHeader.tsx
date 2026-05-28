@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import useAuth from '../../hooks/auth/useAuth';
+import useLanguage from '../../hooks/language/useLanguage';
 
 /**
- * Header global das paginas autenticadas.
+ * Header global das páginas autenticadas.
  *
  * Estrutura:
- *   [logo / brand]   [home] [projetos]                 [user menu]
- *
- * O user menu abre uma dropdown com perfil + logout.
+ *   [logo / brand]   [home] [projetos]          [lang btn]  [user menu]
  */
 export function AppHeader() {
     const { user, logout } = useAuth();
+    const { t, toggleLanguage } = useLanguage();
     const navigate = useNavigate();
 
     const [menuOpen, setMenuOpen] = useState(false);
@@ -45,48 +45,60 @@ export function AppHeader() {
 
                 <nav className="app-nav">
                     <NavLink to="/home" className="app-nav-link">
-                        Home
+                        {t.nav.home}
                     </NavLink>
                     <NavLink to="/projects" className="app-nav-link">
-                        Projetos
+                        {t.nav.projects}
                     </NavLink>
                 </nav>
 
-                <div className="app-user" ref={menuRef}>
+                <div className="app-header-controls">
                     <button
                         type="button"
-                        className="app-user-trigger"
-                        onClick={() => setMenuOpen(o => !o)}
-                        aria-haspopup="menu"
-                        aria-expanded={menuOpen}
+                        className="app-lang-btn"
+                        onClick={toggleLanguage}
+                        aria-label={t.language.ariaLabel}
+                        title={t.language.ariaLabel}
                     >
-                        <span className="app-user-avatar">{initial}</span>
-                        <span className="app-user-name">
-                            {user?.username ?? 'Conta'}
-                        </span>
-                        <span className="app-user-caret">▾</span>
+                        {t.language.switchTo}
                     </button>
 
-                    {menuOpen ? (
-                        <div className="app-user-menu" role="menu">
-                            <Link
-                                to="/profile"
-                                className="app-user-menu-item"
-                                onClick={() => setMenuOpen(false)}
-                                role="menuitem"
-                            >
-                                Perfil
-                            </Link>
-                            <button
-                                type="button"
-                                className="app-user-menu-item app-user-menu-danger"
-                                onClick={handleLogout}
-                                role="menuitem"
-                            >
-                                Terminar sessão
-                            </button>
-                        </div>
-                    ) : null}
+                    <div className="app-user" ref={menuRef}>
+                        <button
+                            type="button"
+                            className="app-user-trigger"
+                            onClick={() => setMenuOpen(o => !o)}
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpen}
+                        >
+                            <span className="app-user-avatar">{initial}</span>
+                            <span className="app-user-name">
+                                {user?.username ?? t.nav.profile}
+                            </span>
+                            <span className="app-user-caret">▾</span>
+                        </button>
+
+                        {menuOpen ? (
+                            <div className="app-user-menu" role="menu">
+                                <Link
+                                    to="/profile"
+                                    className="app-user-menu-item"
+                                    onClick={() => setMenuOpen(false)}
+                                    role="menuitem"
+                                >
+                                    {t.nav.profile}
+                                </Link>
+                                <button
+                                    type="button"
+                                    className="app-user-menu-item app-user-menu-danger"
+                                    onClick={handleLogout}
+                                    role="menuitem"
+                                >
+                                    {t.nav.logout}
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
             </div>
         </header>

@@ -4,6 +4,8 @@ import re
 import math
 import sys
 import importlib
+import tempfile
+from pathlib import Path
 
 if os.name == "nt":
     _DEFAULT_MIDI2LY = r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\midi2ly.py"
@@ -105,15 +107,43 @@ def otimizar_tablatura(sequencia_notas_midi):
     return caminhos[melhor_estado][1]
 
 
+def _normalizar_para_wav(ficheiro_audio: str) -> tuple:
+    """Converte qualquer formato de audio para WAV mono 22050 Hz via librosa+soundfile.
+
+    Devolve (caminho_wav, e_temporario).
+    Se o ficheiro ja for WAV nao faz nada e devolve (ficheiro_audio, False).
+    """
+    if Path(ficheiro_audio).suffix.lower() == ".wav":
+        return ficheiro_audio, False
+
+    try:
+        import librosa
+        import soundfile as sf
+
+        y, sr = librosa.load(ficheiro_audio, sr=22050, mono=True)
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        sf.write(tmp.name, y, sr)
+        return tmp.name, True
+    except Exception as e:
+        print(f"[audio_to_tablature2] Aviso: falha ao converter para WAV ({e}), a usar ficheiro original.")
+        return ficheiro_audio, False
+
+
 def extrair_midi_do_audio(ficheiro_audio, ficheiro_midi):
     global ULTIMO_ERRO_EXTRACAO
     ULTIMO_ERRO_EXTRACAO = None
     print("Passo 1: A extrair MIDI do Áudio...")
+
+    # Normalizar para WAV antes de passar ao basic_pitch.
+    # Previne hang/crash quando o ficheiro e MP3 ou outro formato nao-WAV.
+    wav_path, e_temporario = _normalizar_para_wav(ficheiro_audio)
+
     try:
         inference_module = importlib.import_module("basic_pitch.inference")
         predict = getattr(inference_module, "predict")
         model_output, midi_data, note_events = predict(
-            ficheiro_audio, onset_threshold=0.6, frame_threshold=0.4, minimum_note_length=58
+            wav_path, onset_threshold=0.6, frame_threshold=0.4, minimum_note_length=58
         )
         midi_data.write(ficheiro_midi)
         return True, midi_data  # Devolvemos o midi_data para o algoritmo ler!
@@ -125,6 +155,12 @@ def extrair_midi_do_audio(ficheiro_audio, ficheiro_midi):
         ULTIMO_ERRO_EXTRACAO = str(e)
         print(f"ERRO: {ULTIMO_ERRO_EXTRACAO}")
         return False, None, ULTIMO_ERRO_EXTRACAO
+    finally:
+        if e_temporario:
+            try:
+                Path(wav_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def obter_ultimo_erro_extracao():

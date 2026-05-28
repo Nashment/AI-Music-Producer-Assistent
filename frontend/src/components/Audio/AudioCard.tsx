@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { AudioAnalysisResponse } from '../../services/audio/audioResponseTypes';
+import useLanguage from '../../hooks/language/useLanguage';
 
 interface Props {
     projectId: string;
@@ -19,6 +20,8 @@ function formatDuration(s: number): string {
 }
 
 export function AudioCard({ projectId, audio, onDelete }: Props) {
+    const { t } = useLanguage();
+
     return (
         <article className="audio-card">
             <Link
@@ -35,7 +38,7 @@ export function AudioCard({ projectId, audio, onDelete }: Props) {
                     <li>{formatDuration(audio.duration)}</li>
                     <li>{audio.sample_rate} Hz</li>
                     {audio.bpm ? <li>{audio.bpm} BPM</li> : null}
-                    {audio.key ? <li>tom {audio.key}</li> : null}
+                    {audio.key ? <li>{t.audioCard.key} {audio.key}</li> : null}
                 </ul>
             </Link>
             {onDelete ? (
@@ -47,7 +50,7 @@ export function AudioCard({ projectId, audio, onDelete }: Props) {
                         onDelete(audio.id);
                     }}
                 >
-                    Apagar
+                    {t.audioCard.delete}
                 </button>
             ) : null}
         </article>

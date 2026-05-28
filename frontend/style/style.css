@@ -24,6 +24,9 @@
     --muted:       #8690a4;
     --muted-strong:#6c7689;
 
+    /* Header (necessário para adaptação ao tema) */
+    --header-bg: rgba(11, 13, 18, 0.78);
+
     /* Brand */
     --primary:        #7c5cff;
     --primary-strong: #6a47ff;
@@ -63,6 +66,48 @@
     /* Typography */
     --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
     --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tema Claro
+ * Sobrescreve os tokens de cor quando data-theme="light" está no :root.
+ * Todos os outros tokens (radius, spacing, tipografia, brand) mantêm-se iguais.
+ * ------------------------------------------------------------------------- */
+[data-theme="light"] {
+    /* Surfaces */
+    --bg:        #f0f2f7;
+    --surface-0: #f7f8fb;
+    --surface-1: #ffffff;
+    --surface-2: #eef0f5;
+    --surface-3: #e4e7ef;
+
+    /* Borders */
+    --border:        #d6dae6;
+    --border-strong: #b8bed0;
+
+    /* Text */
+    --text:        #1a1f2e;
+    --text-soft:   #3d4560;
+    --muted:       #6c7689;
+    --muted-strong:#8890a4;
+
+    /* Brand (mantém-se, apenas ajuste de soft) */
+    --primary-soft: rgba(124, 92, 255, 0.12);
+
+    /* Shadows mais suaves no claro */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.10);
+    --shadow:    0 4px 14px rgba(0, 0, 0, 0.10);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.14);
+
+    /* Header */
+    --header-bg: rgba(240, 242, 247, 0.82);
+}
+
+[data-theme="light"] body {
+    background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(124, 92, 255, 0.06), transparent 60%),
+        radial-gradient(900px 500px at -10% 30%, rgba(67, 211, 192, 0.04), transparent 60%),
+        var(--bg);
 }
 
 * {

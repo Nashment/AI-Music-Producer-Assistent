@@ -1,0 +1,24 @@
+# ============================================================
+#  Dockerfile.worker — Celery Worker (processamento de audio/ML)
+#  Imagem pesada: PyTorch CPU, Demucs, basic-pitch, LilyPond.
+#  So reconstruir quando as dependencias ML mudarem.
+# ============================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Dependencias de sistema para processamento de audio
+RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     libpq-dev     ffmpeg     libsndfile1     lilypond     && rm -rf /var/lib/apt/lists/*
+
+# Copiar ambos os ficheiros de requirements (worker inclui api via -r)
+COPY docker/requirements-api.txt ./requirements-api.txt
+COPY docker/requirements-worker.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar codigo
+COPY backend/ /app/
+
+RUN useradd -m appuser
+USER appuser
+
+CMD ["celery", "-A", "worker.celery_app:celery_app", "worker", "--pool=solo", "--loglevel=info"]

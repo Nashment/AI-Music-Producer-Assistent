@@ -3,6 +3,7 @@ import {
     GenerationRequest,
     InstrumentType,
 } from '../../services/generation/generationResponseTypes';
+import useLanguage from '../../hooks/language/useLanguage';
 
 interface Props {
     projectId: string;
@@ -18,13 +19,9 @@ const INSTRUMENTS: InstrumentType[] = ['guitarra', 'piano', 'bateria', 'baixo', 
 /**
  * Painel direito (modo "default" da página de áudio): submete um pedido
  * de geração de música pela IA usando o áudio original como semente.
- *
- * Restrições:
- *   - O botão "Gerar Música" só está activo se prompt e instrumento
- *     estiverem preenchidos.
- *   - Não usa o endpoint de cover — chama o endpoint normal POST /generation.
  */
 export function GenerateMusicPanel({ projectId, audioId, submitting, onSubmit }: Props) {
+    const { t } = useLanguage();
     const [prompt, setPrompt] = useState('');
     const [instrument, setInstrument] = useState<InstrumentType | ''>('');
 
@@ -45,34 +42,31 @@ export function GenerateMusicPanel({ projectId, audioId, submitting, onSubmit }:
     return (
         <div className="generate-panel">
             <header>
-                <h3>Gerar nova música</h3>
-                <p className="text-muted text-sm">
-                    Descreve o que queres ouvir e escolhe o instrumento. A IA
-                    usa este áudio original como referência.
-                </p>
+                <h3>{t.generatePanel.title}</h3>
+                <p className="text-muted text-sm">{t.generatePanel.desc}</p>
             </header>
 
             <form onSubmit={handleSubmit} className="generate-panel-form">
                 <div className="field">
-                    <label htmlFor="gen-prompt">Prompt</label>
+                    <label htmlFor="gen-prompt">{t.generatePanel.promptLabel}</label>
                     <textarea
                         id="gen-prompt"
                         value={prompt}
                         onChange={e => setPrompt(e.target.value)}
                         rows={4}
-                        placeholder="Ex: solo melódico em estilo blues, lento e expressivo"
+                        placeholder={t.generatePanel.promptPlaceholder}
                     />
                 </div>
 
                 <div className="field">
-                    <label htmlFor="gen-instrument">Instrumento</label>
+                    <label htmlFor="gen-instrument">{t.generatePanel.instrumentLabel}</label>
                     <select
                         id="gen-instrument"
                         value={instrument}
                         onChange={e => setInstrument(e.target.value as InstrumentType | '')}
                     >
                         <option value="" disabled>
-                            — escolhe um instrumento —
+                            {t.generatePanel.instrumentPlaceholder}
                         </option>
                         {INSTRUMENTS.map(i => (
                             <option key={i} value={i}>
@@ -83,7 +77,7 @@ export function GenerateMusicPanel({ projectId, audioId, submitting, onSubmit }:
                 </div>
 
                 <button type="submit" disabled={!canSubmit || submitting} className="btn btn-block">
-                    {submitting ? 'A submeter…' : '🎶 Gerar música'}
+                    {submitting ? t.generatePanel.submitting : t.generatePanel.generate}
                 </button>
             </form>
         </div>

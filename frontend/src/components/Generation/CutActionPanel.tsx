@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { generationService } from '../../services/generation/generationService';
 import { GenerationResult } from '../../services/generation/generationResponseTypes';
+import useLanguage from '../../hooks/language/useLanguage';
 import Spinner from '../Layout/Spinner';
 
 interface Props {
@@ -9,29 +10,22 @@ interface Props {
 }
 
 /**
- * Painel direito quando o utilizador selecciona um corte. Apenas duas
- * acções: gerar partitura PDF e gerar tablatura PDF — ambos a partir do
- * áudio físico do corte (POST /generation/{id}/partitura ou /tablature).
- *
- * Cada PDF é mostrado num <iframe> embutido + botão de download.
+ * Painel direito quando o utilizador selecciona um corte.
+ * Duas acções: gerar partitura PDF e gerar tablatura PDF.
  */
 export function CutActionPanel({ cut, onError }: Props) {
+    const { t } = useLanguage();
     const [partituraUrl, setPartituraUrl] = useState<string | null>(null);
     const [tabUrl, setTabUrl] = useState<string | null>(null);
     const [loadingPart, setLoadingPart] = useState(false);
     const [loadingTab, setLoadingTab] = useState(false);
+    const [loadingAudio, setLoadingAudio] = useState(false);
 
-    // Refs mantêm sempre os valores actuais — essencial para os cleanups
-    // de useEffect não usarem closures com valores antigos.
     const partituraUrlRef = useRef<string | null>(null);
     const tabUrlRef = useRef<string | null>(null);
     partituraUrlRef.current = partituraUrl;
     tabUrlRef.current = tabUrl;
 
-    // Revoga os blob URLs apenas ao desmontar o componente.
-    // NÃO colocar [partituraUrl, tabUrl] como deps: se tabUrl mudar e
-    // o cleanup correr com partituraUrl ainda válido, o blob da partitura
-    // seria revogado enquanto o utilizador ainda podia estar a fazer download.
     useEffect(() => {
         return () => {
             if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
@@ -39,7 +33,6 @@ export function CutActionPanel({ cut, onError }: Props) {
         };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Quando se muda para outro corte, revogamos os blobs antigos e limpamos.
     useEffect(() => {
         return () => {
             if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
@@ -56,7 +49,7 @@ export function CutActionPanel({ cut, onError }: Props) {
             const url = await generationService.generatePartituraFromGeneration(cut.id);
             setPartituraUrl(url);
         } catch (e: any) {
-            onError(e?.detail ?? 'Erro a gerar partitura.');
+            onError(e?.detail ?? t.cutPanel.scoreError);
         } finally {
             setLoadingPart(false);
         }
@@ -68,18 +61,36 @@ export function CutActionPanel({ cut, onError }: Props) {
             const url = await generationService.generateTablatureFromGeneration(cut.id);
             setTabUrl(url);
         } catch (e: any) {
-            onError(e?.detail ?? 'Erro a gerar tablatura.');
+            onError(e?.detail ?? t.cutPanel.tabError);
         } finally {
             setLoadingTab(false);
+        }
+    };
+
+    const handleDownloadAudio = async () => {
+        setLoadingAudio(true);
+        try {
+            const blobUrl = await generationService.fetchGenerationAudioBlobUrl(cut.id);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = `corte_${cut.id.slice(0, 8)}.wav`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+        } catch (e: any) {
+            onError(e?.detail ?? t.cutPanel.audioError);
+        } finally {
+            setLoadingAudio(false);
         }
     };
 
     return (
         <div className="cut-action-panel">
             <header>
-                <h3>Notação para este corte</h3>
+                <h3>{t.cutPanel.title}</h3>
                 <p className="text-muted text-sm">
-                    {cut.prompt || 'Excerto de uma geração'}
+                    {cut.prompt || t.cutPanel.defaultPrompt}
                 </p>
             </header>
 
@@ -91,9 +102,9 @@ export function CutActionPanel({ cut, onError }: Props) {
                     disabled={loadingPart}
                 >
                     {loadingPart ? (
-                        <Spinner size="sm" label="A gerar…" />
+                        <Spinner size="sm" label={t.cutPanel.generating} />
                     ) : (
-                        <>📄 Gerar Partitura</>
+                        <>{t.cutPanel.generateScore}</>
                     )}
                 </button>
                 <button
@@ -103,9 +114,21 @@ export function CutActionPanel({ cut, onError }: Props) {
                     disabled={loadingTab}
                 >
                     {loadingTab ? (
-                        <Spinner size="sm" label="A gerar…" />
+                        <Spinner size="sm" label={t.cutPanel.generating} />
                     ) : (
-                        <>🎼 Gerar Tablatura</>
+                        <>{t.cutPanel.generateTab}</>
+                    )}
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleDownloadAudio}
+                    disabled={loadingAudio}
+                >
+                    {loadingAudio ? (
+                        <Spinner size="sm" label={t.cutPanel.preparing} />
+                    ) : (
+                        <>{t.cutPanel.downloadAudio}</>
                     )}
                 </button>
             </div>
@@ -113,24 +136,24 @@ export function CutActionPanel({ cut, onError }: Props) {
             {partituraUrl ? (
                 <section className="cut-action-pdf">
                     <header className="cut-action-pdf-head">
-                        <strong>Partitura</strong>
+                        <strong>{t.cutPanel.score}</strong>
                         <a href={partituraUrl} download={`partitura_${cut.id.slice(0, 8)}.pdf`}>
-                            ⬇ Download
+                            {t.cutPanel.download}
                         </a>
                     </header>
-                    <iframe src={partituraUrl} title="Partitura PDF" />
+                    <iframe src={partituraUrl} title={t.cutPanel.score} />
                 </section>
             ) : null}
 
             {tabUrl ? (
                 <section className="cut-action-pdf">
                     <header className="cut-action-pdf-head">
-                        <strong>Tablatura</strong>
+                        <strong>{t.cutPanel.tab}</strong>
                         <a href={tabUrl} download={`tablatura_${cut.id.slice(0, 8)}.pdf`}>
-                            ⬇ Download
+                            {t.cutPanel.download}
                         </a>
                     </header>
-                    <iframe src={tabUrl} title="Tablatura PDF" />
+                    <iframe src={tabUrl} title={t.cutPanel.tab} />
                 </section>
             ) : null}
         </div>

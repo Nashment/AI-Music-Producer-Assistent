@@ -23,7 +23,7 @@
     top: 0;
     z-index: 20;
     backdrop-filter: blur(12px);
-    background: rgba(11, 13, 18, 0.78);
+    background: var(--header-bg);
     border-bottom: 1px solid var(--border);
 }
 
@@ -79,6 +79,33 @@
 .app-nav-link.active {
     background: var(--primary-soft);
     color: var(--primary);
+}
+
+/* Controls wrapper (lang btn + user menu) */
+.app-header-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* Language toggle button */
+.app-lang-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-soft);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+    line-height: 1;
+}
+.app-lang-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+    border-color: var(--primary);
 }
 
 /* User menu */
