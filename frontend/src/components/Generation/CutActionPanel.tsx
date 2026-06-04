@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { generationService } from '../../services/generation/generationService';
 import { GenerationResult } from '../../services/generation/generationResponseTypes';
 import useLanguage from '../../hooks/language/useLanguage';
@@ -7,63 +7,95 @@ import Spinner from '../Layout/Spinner';
 interface Props {
     cut: GenerationResult;
     onError: (msg: string) => void;
+    /** Chamado após enfileirar notação para forçar refresh imediato no hook pai. */
+    onNotationRequested?: () => void;
+}
+
+type NotationPhase = 'idle' | 'pending' | 'processing' | 'completed' | 'failed';
+
+/** Deriva a fase a partir dos dados da geração (actualizados pelo polling do pai). */
+function toPhase(status: string | null | undefined, hasKey: boolean): NotationPhase {
+    // status tem prioridade sobre hasKey — ao regenerar, o status já é 'pending'
+    // mas a storage_key antiga pode ainda estar na DB enquanto o worker processa.
+    if (status === 'pending')    return 'pending';
+    if (status === 'processing') return 'processing';
+    if (status === 'failed')     return 'failed';
+    if (hasKey)                  return 'completed';
+    return 'idle';
 }
 
 /**
  * Painel direito quando o utilizador selecciona um corte.
- * Duas acções: gerar partitura PDF e gerar tablatura PDF.
+ *
+ * Fluxo assíncrono (replica o padrão de áudio Suno):
+ *   1. Utilizador clica "Gerar" → POST /{id}/partitura|tablature (202 imediato)
+ *   2. Hook pai faz polling → cut.partitura_status transita para 'processing' → 'completed'
+ *   3. Quando completed → GET /{id}/partitura|tablature devolve presigned URL → iframe
+ *   4. Botão "Regerar" aparece ao lado do Download — chama o mesmo endpoint POST
  */
-export function CutActionPanel({ cut, onError }: Props) {
+export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
     const { t } = useLanguage();
+
+    const partituraPhase = toPhase(cut.partitura_status, !!cut.partitura_storage_key);
+    const tablaturaPhase = toPhase(cut.tablatura_status, !!cut.tablatura_storage_key);
+
+    // URLs presigned carregadas do R2 quando a fase transita para 'completed'
     const [partituraUrl, setPartituraUrl] = useState<string | null>(null);
-    const [tabUrl, setTabUrl] = useState<string | null>(null);
-    const [loadingPart, setLoadingPart] = useState(false);
-    const [loadingTab, setLoadingTab] = useState(false);
+    const [tablaturaUrl, setTablaturaUrl] = useState<string | null>(null);
+    const [loadingPartUrl, setLoadingPartUrl] = useState(false);
+    const [loadingTabUrl, setLoadingTabUrl] = useState(false);
     const [loadingAudio, setLoadingAudio] = useState(false);
 
-    const partituraUrlRef = useRef<string | null>(null);
-    const tabUrlRef = useRef<string | null>(null);
-    partituraUrlRef.current = partituraUrl;
-    tabUrlRef.current = tabUrl;
-
+    // Limpar URLs ao mudar de corte
     useEffect(() => {
-        return () => {
-            if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
-            if (tabUrlRef.current) URL.revokeObjectURL(tabUrlRef.current);
-        };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    useEffect(() => {
-        return () => {
-            if (partituraUrlRef.current) URL.revokeObjectURL(partituraUrlRef.current);
-            if (tabUrlRef.current) URL.revokeObjectURL(tabUrlRef.current);
-            setPartituraUrl(null);
-            setTabUrl(null);
-        };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        setPartituraUrl(null);
+        setTablaturaUrl(null);
     }, [cut.id]);
 
-    const handlePartitura = async () => {
-        setLoadingPart(true);
+    // Quando partitura transita para completed → buscar URL automaticamente
+    useEffect(() => {
+        if (partituraPhase !== 'completed' || partituraUrl || loadingPartUrl) return;
+        let cancelled = false;
+        setLoadingPartUrl(true);
+        generationService.getPartituraUrl(cut.id)
+            .then(url => { if (!cancelled) setPartituraUrl(url); })
+            .catch(e => { if (!cancelled) onError(e?.detail ?? t.cutPanel.scoreError); })
+            .finally(() => { if (!cancelled) setLoadingPartUrl(false); });
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [partituraPhase, cut.id]);
+
+    // Quando tablatura transita para completed → buscar URL automaticamente
+    useEffect(() => {
+        if (tablaturaPhase !== 'completed' || tablaturaUrl || loadingTabUrl) return;
+        let cancelled = false;
+        setLoadingTabUrl(true);
+        generationService.getTablatureUrl(cut.id)
+            .then(url => { if (!cancelled) setTablaturaUrl(url); })
+            .catch(e => { if (!cancelled) onError(e?.detail ?? t.cutPanel.tabError); })
+            .finally(() => { if (!cancelled) setLoadingTabUrl(false); });
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tablaturaPhase, cut.id]);
+
+    const handleRequestPartitura = async () => {
+        // Limpar URL local para forçar re-fetch quando o worker concluir
+        setPartituraUrl(null);
         try {
-            const url = await generationService.generatePartituraFromGeneration(cut.id);
-            setPartituraUrl(url);
+            await generationService.requestPartitura(cut.id);
+            onNotationRequested?.();
         } catch (e: any) {
             onError(e?.detail ?? t.cutPanel.scoreError);
-        } finally {
-            setLoadingPart(false);
         }
     };
 
-    const handleTablature = async () => {
-        setLoadingTab(true);
+    const handleRequestTablature = async () => {
+        setTablaturaUrl(null);
         try {
-            const url = await generationService.generateTablatureFromGeneration(cut.id);
-            setTabUrl(url);
+            await generationService.requestTablature(cut.id);
+            onNotationRequested?.();
         } catch (e: any) {
             onError(e?.detail ?? t.cutPanel.tabError);
-        } finally {
-            setLoadingTab(false);
         }
     };
 
@@ -97,66 +129,140 @@ export function CutActionPanel({ cut, onError }: Props) {
             <div className="cut-action-buttons">
                 <button
                     type="button"
-                    className="btn"
-                    onClick={handlePartitura}
-                    disabled={loadingPart}
-                >
-                    {loadingPart ? (
-                        <Spinner size="sm" label={t.cutPanel.generating} />
-                    ) : (
-                        <>{t.cutPanel.generateScore}</>
-                    )}
-                </button>
-                <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handleTablature}
-                    disabled={loadingTab}
-                >
-                    {loadingTab ? (
-                        <Spinner size="sm" label={t.cutPanel.generating} />
-                    ) : (
-                        <>{t.cutPanel.generateTab}</>
-                    )}
-                </button>
-                <button
-                    type="button"
                     className="btn btn-ghost"
                     onClick={handleDownloadAudio}
                     disabled={loadingAudio}
                 >
-                    {loadingAudio ? (
-                        <Spinner size="sm" label={t.cutPanel.preparing} />
-                    ) : (
-                        <>{t.cutPanel.downloadAudio}</>
-                    )}
+                    {loadingAudio
+                        ? <Spinner size="sm" label={t.cutPanel.preparing} />
+                        : <>{t.cutPanel.downloadAudio}</>}
                 </button>
             </div>
 
-            {partituraUrl ? (
-                <section className="cut-action-pdf">
-                    <header className="cut-action-pdf-head">
-                        <strong>{t.cutPanel.score}</strong>
-                        <a href={partituraUrl} download={`partitura_${cut.id.slice(0, 8)}.pdf`}>
-                            {t.cutPanel.download}
-                        </a>
-                    </header>
-                    <iframe src={partituraUrl} title={t.cutPanel.score} />
-                </section>
-            ) : null}
+            {/* ---- Partitura ---- */}
+            <NotationSection
+                label={t.cutPanel.score}
+                generateLabel={t.cutPanel.generateScore}
+                downloadName={`partitura_${cut.id.slice(0, 8)}.pdf`}
+                phase={partituraPhase}
+                pdfUrl={partituraUrl}
+                loadingUrl={loadingPartUrl}
+                errorLabel={t.cutPanel.scoreError}
+                onGenerate={handleRequestPartitura}
+                retryLabel={t.cutPanel.retry}
+                regenerateLabel={t.cutPanel.regenerate}
+                downloadLabel={t.cutPanel.download}
+                generatingLabel={t.cutPanel.generating}
+            />
 
-            {tabUrl ? (
-                <section className="cut-action-pdf">
-                    <header className="cut-action-pdf-head">
-                        <strong>{t.cutPanel.tab}</strong>
-                        <a href={tabUrl} download={`tablatura_${cut.id.slice(0, 8)}.pdf`}>
-                            {t.cutPanel.download}
-                        </a>
-                    </header>
-                    <iframe src={tabUrl} title={t.cutPanel.tab} />
-                </section>
-            ) : null}
+            {/* ---- Tablatura ---- */}
+            <NotationSection
+                label={t.cutPanel.tab}
+                generateLabel={t.cutPanel.generateTab}
+                downloadName={`tablatura_${cut.id.slice(0, 8)}.pdf`}
+                phase={tablaturaPhase}
+                pdfUrl={tablaturaUrl}
+                loadingUrl={loadingTabUrl}
+                errorLabel={t.cutPanel.tabError}
+                onGenerate={handleRequestTablature}
+                retryLabel={t.cutPanel.retry}
+                regenerateLabel={t.cutPanel.regenerate}
+                downloadLabel={t.cutPanel.download}
+                generatingLabel={t.cutPanel.generating}
+            />
         </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-componente: encapsula o bloco visual de uma notação (partitura/tablatura)
+// ---------------------------------------------------------------------------
+interface NotationSectionProps {
+    label: string;
+    generateLabel: string;
+    downloadName: string;
+    phase: NotationPhase;
+    pdfUrl: string | null;
+    loadingUrl: boolean;
+    errorLabel: string;
+    onGenerate: () => void;
+    retryLabel: string;
+    regenerateLabel: string;
+    downloadLabel: string;
+    generatingLabel: string;
+}
+
+function NotationSection({
+    label, generateLabel, downloadName,
+    phase, pdfUrl, loadingUrl, errorLabel,
+    onGenerate, retryLabel, regenerateLabel, downloadLabel, generatingLabel,
+}: NotationSectionProps) {
+
+    // Fase: ainda não pedido
+    if (phase === 'idle') {
+        return (
+            <section className="cut-action-notation">
+                <button type="button" className="btn" onClick={onGenerate}>
+                    {generateLabel}
+                </button>
+            </section>
+        );
+    }
+
+    // Fase: em processamento (pending ou processing)
+    if (phase === 'pending' || phase === 'processing') {
+        return (
+            <section className="cut-action-notation">
+                <Spinner size="sm" label={generatingLabel} />
+                <span className="text-muted text-sm">{label}</span>
+            </section>
+        );
+    }
+
+    // Fase: falhou
+    if (phase === 'failed') {
+        return (
+            <section className="cut-action-notation cut-action-notation--error">
+                <span className="text-error text-sm">{errorLabel}</span>
+                <button type="button" className="btn btn-sm" onClick={onGenerate}>
+                    {retryLabel}
+                </button>
+            </section>
+        );
+    }
+
+    // Fase: completed — PDF + Download + botão Regerar
+    // O botão Regerar só aparece aqui (após primeira geração bem-sucedida)
+    return (
+        <section className="cut-action-pdf">
+            <header className="cut-action-pdf-head">
+                <strong>{label}</strong>
+                <div className="cut-action-pdf-actions">
+                    {pdfUrl && (
+                        <a
+                            href={pdfUrl}
+                            download={downloadName}
+                            className="btn btn-sm btn-ghost"
+                        >
+                            {downloadLabel}
+                        </a>
+                    )}
+                    {/* Regerar — visível APENAS após primeira geração bem-sucedida */}
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={onGenerate}
+                        title={regenerateLabel}
+                    >
+                        {regenerateLabel}
+                    </button>
+                </div>
+            </header>
+            {loadingUrl && <Spinner size="sm" />}
+            {pdfUrl && (
+                <iframe src={pdfUrl} title={label} />
+            )}
+        </section>
     );
 }
 

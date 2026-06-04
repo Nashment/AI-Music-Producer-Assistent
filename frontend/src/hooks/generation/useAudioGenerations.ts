@@ -8,6 +8,8 @@ import {
 
 const POLL_INTERVAL_MS = 4000;
 const TERMINAL = new Set(['completed', 'failed']);
+/** Estados de notação que ainda precisam de polling. */
+const NOTATION_PENDING = new Set(['pending', 'processing']);
 
 export interface AudioGenerationNode extends GenerationResult {
     cuts: GenerationResult[];
@@ -74,7 +76,16 @@ export function useAudioGenerations(audioId: string | undefined) {
     // Polling enquanto houver gerações pending/processing
     const tick = useCallback(async () => {
         if (stopped.current || !audioId) return;
-        const hasPending = tree.some(n => !TERMINAL.has(n.status));
+        const hasPending = tree.some(root =>
+            !TERMINAL.has(root.status) ||
+            NOTATION_PENDING.has(root.partitura_status ?? '') ||
+            NOTATION_PENDING.has(root.tablatura_status ?? '') ||
+            root.cuts.some(cut =>
+                !TERMINAL.has(cut.status) ||
+                NOTATION_PENDING.has(cut.partitura_status ?? '') ||
+                NOTATION_PENDING.has(cut.tablatura_status ?? '')
+            )
+        );
         if (!hasPending) return;
         try {
             const next = await buildTree(audioId);
@@ -98,7 +109,16 @@ export function useAudioGenerations(audioId: string | undefined) {
 
     useEffect(() => {
         if (pollTimer.current) clearTimeout(pollTimer.current);
-        const hasPending = tree.some(n => !TERMINAL.has(n.status));
+        const hasPending = tree.some(root =>
+            !TERMINAL.has(root.status) ||
+            NOTATION_PENDING.has(root.partitura_status ?? '') ||
+            NOTATION_PENDING.has(root.tablatura_status ?? '') ||
+            root.cuts.some(cut =>
+                !TERMINAL.has(cut.status) ||
+                NOTATION_PENDING.has(cut.partitura_status ?? '') ||
+                NOTATION_PENDING.has(cut.tablatura_status ?? '')
+            )
+        );
         if (hasPending && !stopped.current) {
             pollTimer.current = setTimeout(tick, POLL_INTERVAL_MS);
         }

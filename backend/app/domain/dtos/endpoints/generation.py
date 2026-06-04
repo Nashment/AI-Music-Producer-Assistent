@@ -74,6 +74,8 @@ class GenerationResult(BaseModel):
     midi_storage_key: Optional[str] = None
     partitura_storage_key: Optional[str] = None
     tablatura_storage_key: Optional[str] = None
+    partitura_status: Optional[str] = None  # null|pending|processing|completed|failed
+    tablatura_status: Optional[str] = None   # null|pending|processing|completed|failed
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

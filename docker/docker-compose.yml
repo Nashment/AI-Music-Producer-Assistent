@@ -15,6 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./SQL/01_init_schema.sql:/docker-entrypoint-initdb.d/01_init_schema.sql
       - ./SQL/02_create_tables.sql:/docker-entrypoint-initdb.d/02_create_tables.sql
+      - ./SQL/03_migrations.sql:/docker-entrypoint-initdb.d/03_migrations.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-music_user}"]
       interval: 10s

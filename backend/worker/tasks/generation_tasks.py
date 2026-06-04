@@ -151,9 +151,20 @@ def generate_partitura_task(self, generation_id: str) -> dict:
 async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
     db, engine = _new_task_session()
     try:
+        # Marcar como a processar antes de qualquer trabalho pesado
+        await GenerationQueries.update_notation_status(
+            db=db, generation_id=generation_id,
+            notation_type="tablatura", status="processing",
+        )
+
         generation = await GenerationQueries.get_generation(db=db, generation_id=generation_id)
         if not generation or not generation.audio_storage_key:
-            raise ValueError(f"Generation {generation_id} sem audio disponivel.")
+            err = f"Generation {generation_id} sem audio disponivel."
+            await GenerationQueries.update_notation_status(
+                db=db, generation_id=generation_id,
+                notation_type="tablatura", status="failed", error_message=err,
+            )
+            raise ValueError(err)
 
         TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -200,11 +211,27 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
                 if not pdf_final.exists():
                     raise RuntimeError("PDF de tablatura nao foi criado.")
 
-                r2_key = f"tablature/{generation_id}_{uuid.uuid4().hex[:8]}.pdf"
+                # Chave R2 estavel e determinista — permite regerar no mesmo path
+                r2_key = f"tablature/{generation_id}.pdf"
+                storage.delete_file(r2_key)  # apaga versao anterior se existir
                 if not storage.upload_file(str(pdf_final), r2_key):
                     raise RuntimeError("Falha ao fazer upload da tablatura para R2.")
+
+                # Persistir chave e marcar completed na DB
+                await GenerationQueries.update_notation_status(
+                    db=db, generation_id=generation_id,
+                    notation_type="tablatura", status="completed",
+                    storage_key=r2_key,
+                )
                 return {"r2_key": r2_key}
 
+            except Exception as exc:
+                await GenerationQueries.update_notation_status(
+                    db=db, generation_id=generation_id,
+                    notation_type="tablatura", status="failed",
+                    error_message=str(exc),
+                )
+                raise
             finally:
                 for p in [midi_path, ly_path, pdf_final]:
                     if isinstance(p, Path):
@@ -217,9 +244,20 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
 async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
     db, engine = _new_task_session()
     try:
+        # Marcar como a processar antes de qualquer trabalho pesado
+        await GenerationQueries.update_notation_status(
+            db=db, generation_id=generation_id,
+            notation_type="partitura", status="processing",
+        )
+
         generation = await GenerationQueries.get_generation(db=db, generation_id=generation_id)
         if not generation or not generation.audio_storage_key:
-            raise ValueError(f"Generation {generation_id} sem audio disponivel.")
+            err = f"Generation {generation_id} sem audio disponivel."
+            await GenerationQueries.update_notation_status(
+                db=db, generation_id=generation_id,
+                notation_type="partitura", status="failed", error_message=err,
+            )
+            raise ValueError(err)
 
         PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -243,11 +281,27 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
                 if not result or not pdf_final.exists():
                     raise RuntimeError("PDF de partitura nao foi criado.")
 
-                r2_key = f"partitura/{generation_id}_{uuid.uuid4().hex[:8]}.pdf"
+                # Chave R2 estavel e determinista — permite regerar no mesmo path
+                r2_key = f"partitura/{generation_id}.pdf"
+                storage.delete_file(r2_key)  # apaga versao anterior se existir
                 if not storage.upload_file(str(pdf_final), r2_key):
                     raise RuntimeError("Falha ao fazer upload da partitura para R2.")
+
+                # Persistir chave e marcar completed na DB
+                await GenerationQueries.update_notation_status(
+                    db=db, generation_id=generation_id,
+                    notation_type="partitura", status="completed",
+                    storage_key=r2_key,
+                )
                 return {"r2_key": r2_key}
 
+            except Exception as exc:
+                await GenerationQueries.update_notation_status(
+                    db=db, generation_id=generation_id,
+                    notation_type="partitura", status="failed",
+                    error_message=str(exc),
+                )
+                raise
             finally:
                 for p in [midi_path, pdf_final]:
                     if isinstance(p, Path):

@@ -192,6 +192,8 @@ const ptTranslations = {
         scoreError: 'Erro a gerar partitura.',
         tabError: 'Erro a gerar tablatura.',
         audioError: 'Erro a descarregar áudio.',
+        retry: 'Tentar novamente',
+        regenerate: '🔄 Regerar',
     },
     audioUpload: {
         busy: 'A carregar e analisar…',
@@ -222,6 +224,10 @@ const ptTranslations = {
         statusFailed: 'falhou',
         statusProcessing: 'processando',
         awaitingCompletion: 'Aguarda conclusão',
+        deleteLabel: 'Eliminar',
+        deleteConfirmTitle: 'Eliminar permanentemente',
+        deleteConfirmMsg: 'Esta ação é irreversível. O ficheiro de áudio e todas as notações associadas serão eliminados da cloud.',
+        deleteConfirmLabel: 'Eliminar',
     },
     audioCard: {
         key: 'tom',
@@ -429,6 +435,8 @@ const enTranslations: typeof ptTranslations = {
         scoreError: 'Error generating score.',
         tabError: 'Error generating tablature.',
         audioError: 'Error downloading audio.',
+        retry: 'Try again',
+        regenerate: '🔄 Regenerate',
     },
     audioUpload: {
         busy: 'Uploading and analysing…',
@@ -459,6 +467,10 @@ const enTranslations: typeof ptTranslations = {
         statusFailed: 'failed',
         statusProcessing: 'processing',
         awaitingCompletion: 'Awaiting completion',
+        deleteLabel: 'Delete',
+        deleteConfirmTitle: 'Delete permanently',
+        deleteConfirmMsg: 'This action is irreversible. The audio file and all associated notations will be permanently deleted from the cloud.',
+        deleteConfirmLabel: 'Delete',
     },
     audioCard: {
         key: 'key',

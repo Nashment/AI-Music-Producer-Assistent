@@ -128,6 +128,11 @@ class Generation(Base):
     partitura_storage_key = Column(String(512))
     tablatura_storage_key = Column(String(512))
 
+    # Estado do processamento de notação em background
+    # Valores: null | 'pending' | 'processing' | 'completed' | 'failed'
+    partitura_status = Column(String(32), nullable=True)
+    tablatura_status = Column(String(32), nullable=True)
+
     error_message = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)

@@ -401,13 +401,13 @@ class GenerationService:
             out_tmp.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
-    # Notacao a partir de uma GERACAO
+    # Notacao a partir de uma GERACAO (fire-and-forget — padrao identico ao audio Suno)
     # ------------------------------------------------------------------
 
-    async def generate_tablature_from_generation(
-        self, generation_id: str, user_id: str, tablatura_dir: str,
-    ) -> Resultado:
-        """Despacha para o Celery worker (que tem basic_pitch + lilypond)."""
+    async def request_tablature(self, generation_id: str, user_id: str) -> Resultado:
+        """Enfileira geracao de tablatura em background (fire-and-forget).
+        Devolve imediatamente a geracao com tablatura_status='pending'.
+        O cliente faz polling em GET /{id}/status e aguarda tablatura_status='completed'."""
         try:
             from worker.tasks.generation_tasks import generate_tablature_task
         except ImportError as e:
@@ -420,30 +420,32 @@ class GenerationService:
         if not gen.audio_storage_key:
             return Falha(FicheiroGeracaoIndisponivel(detalhe="A geracao nao tem audio disponivel."))
 
+        # Apagar versao anterior do R2 se existir (caso de regerar)
+        if gen.tablatura_storage_key:
+            storage.delete_file(gen.tablatura_storage_key)
+
+        # Marcar pending na DB antes de enfileirar para que o polling
+        # ja mostre o estado correto mesmo antes do worker arrancar
+        await GenerationQueries.update_notation_status(
+            db=self.db, generation_id=generation_id,
+            notation_type="tablatura", status="pending",
+            clear_storage_key=True,  # garante DB consistente ao regenerar
+        )
+
         try:
-            result = await asyncio.to_thread(
-                lambda: generate_tablature_task.apply_async(
-                    kwargs={"generation_id": generation_id},
-                    queue="notation",
-                ).get(timeout=120)
+            generate_tablature_task.apply_async(
+                kwargs={"generation_id": generation_id},
+                queue="notation",
             )
-            r2_key = result["r2_key"]
         except Exception as e:
-            return Falha(FalhaProcessamentoAudio(operacao=f"celery_tablature: {e}"))
+            return Falha(FilaIndisponivel(detalhe=str(e)))
 
-        out_dir = Path(tablatura_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        local_pdf = out_dir / f"{generation_id}_{uuid.uuid4().hex[:8]}_tablatura.pdf"
-        ok = storage.download_file(r2_key, str(local_pdf))
-        storage.delete_file(r2_key)
-        if not ok or not local_pdf.exists():
-            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
-        return Sucesso(str(local_pdf))
+        # Devolver geracao atualizada (tablatura_status='pending')
+        return await self.get_generation(generation_id, user_id)
 
-    async def generate_partitura_from_generation(
-        self, generation_id: str, user_id: str, partitura_dir: str,
-    ) -> Resultado:
-        """Despacha para o Celery worker (que tem basic_pitch)."""
+    async def request_partitura(self, generation_id: str, user_id: str) -> Resultado:
+        """Enfileira geracao de partitura em background (fire-and-forget).
+        Devolve imediatamente a geracao com partitura_status='pending'."""
         try:
             from worker.tasks.generation_tasks import generate_partitura_task
         except ImportError as e:
@@ -456,25 +458,60 @@ class GenerationService:
         if not gen.audio_storage_key:
             return Falha(FicheiroGeracaoIndisponivel(detalhe="A geracao nao tem audio disponivel."))
 
-        try:
-            result = await asyncio.to_thread(
-                lambda: generate_partitura_task.apply_async(
-                    kwargs={"generation_id": generation_id},
-                    queue="notation",
-                ).get(timeout=120)
-            )
-            r2_key = result["r2_key"]
-        except Exception as e:
-            return Falha(FalhaProcessamentoAudio(operacao=f"celery_partitura: {e}"))
+        # Apagar versao anterior do R2 se existir (caso de regerar)
+        if gen.partitura_storage_key:
+            storage.delete_file(gen.partitura_storage_key)
 
-        out_dir = Path(partitura_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        local_pdf = out_dir / f"{generation_id}_{uuid.uuid4().hex[:8]}_partitura.pdf"
-        ok = storage.download_file(r2_key, str(local_pdf))
-        storage.delete_file(r2_key)
-        if not ok or not local_pdf.exists():
-            return Falha(FalhaProcessamentoAudio(operacao="download_pdf_r2"))
-        return Sucesso(str(local_pdf))
+        await GenerationQueries.update_notation_status(
+            db=self.db, generation_id=generation_id,
+            notation_type="partitura", status="pending",
+            clear_storage_key=True,  # garante DB consistente ao regenerar
+        )
+
+        try:
+            generate_partitura_task.apply_async(
+                kwargs={"generation_id": generation_id},
+                queue="notation",
+            )
+        except Exception as e:
+            return Falha(FilaIndisponivel(detalhe=str(e)))
+
+        return await self.get_generation(generation_id, user_id)
+
+    async def get_tablature_url(self, generation_id: str, user_id: str) -> Resultado:
+        """Devolve presigned URL da tablatura guardada no R2.
+        Retorna erro se tablatura_status != 'completed'."""
+        gen_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(gen_resultado, Falha):
+            return gen_resultado
+        gen = gen_resultado.valor
+        if not gen.tablatura_storage_key:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="Tablatura ainda nao disponivel.",
+            ))
+        url = storage.get_presigned_url(gen.tablatura_storage_key)
+        if not url:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="Nao foi possivel gerar URL de download para a tablatura.",
+            ))
+        return Sucesso(url)
+
+    async def get_partitura_url(self, generation_id: str, user_id: str) -> Resultado:
+        """Devolve presigned URL da partitura guardada no R2."""
+        gen_resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(gen_resultado, Falha):
+            return gen_resultado
+        gen = gen_resultado.valor
+        if not gen.partitura_storage_key:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="Partitura ainda nao disponivel.",
+            ))
+        url = storage.get_presigned_url(gen.partitura_storage_key)
+        if not url:
+            return Falha(FicheiroGeracaoIndisponivel(
+                detalhe="Nao foi possivel gerar URL de download para a partitura.",
+            ))
+        return Sucesso(url)
 
     # ------------------------------------------------------------------
     # Helpers privados

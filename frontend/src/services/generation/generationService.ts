@@ -114,17 +114,40 @@ export const generationService = {
         return URL.createObjectURL(blob);
     },
 
-    /** PDF a partir do áudio de uma geração (típico para cortes). */
-    async generateTablatureFromGeneration(generationId: string): Promise<string> {
+    /**
+     * Enfileira a geração de tablatura em background (fire-and-forget).
+     * Retorna 202 com GenerationResult (tablatura_status='pending').
+     * Serve também como endpoint de regeneração — idempotente.
+     * O cliente faz polling via getStatus() e aguarda tablatura_status='completed'.
+     */
+    async requestTablature(generationId: string): Promise<GenerationResult> {
         const res = await request(`/generation/${generationId}/tablature`, { method: 'POST' });
-        const blob = await res.blob();
-        return URL.createObjectURL(blob);
+        return res.json();
     },
 
-    /** PDF a partir do áudio de uma geração (típico para cortes). */
-    async generatePartituraFromGeneration(generationId: string): Promise<string> {
+    /**
+     * Enfileira a geração de partitura em background (fire-and-forget).
+     * Retorna 202 com GenerationResult (partitura_status='pending').
+     */
+    async requestPartitura(generationId: string): Promise<GenerationResult> {
         const res = await request(`/generation/${generationId}/partitura`, { method: 'POST' });
-        const blob = await res.blob();
-        return URL.createObjectURL(blob);
+        return res.json();
+    },
+
+    /**
+     * Obtém a presigned URL do R2 para visualizar/descarregar a tablatura.
+     * Lança erro se tablatura_status != 'completed'.
+     */
+    async getTablatureUrl(generationId: string): Promise<string> {
+        const data = await request(`/generation/${generationId}/tablature`, { method: 'GET' }).then(r => r.json());
+        return data.url as string;
+    },
+
+    /**
+     * Obtém a presigned URL do R2 para visualizar/descarregar a partitura.
+     */
+    async getPartituraUrl(generationId: string): Promise<string> {
+        const data = await request(`/generation/${generationId}/partitura`, { method: 'GET' }).then(r => r.json());
+        return data.url as string;
     },
 };

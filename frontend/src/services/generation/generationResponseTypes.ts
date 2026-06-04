@@ -46,6 +46,8 @@ export type GenerationResult = {
     midi_storage_key?: string | null;
     partitura_storage_key?: string | null;
     tablatura_storage_key?: string | null;
+    partitura_status?: string | null;  // null|pending|processing|completed|failed
+    tablatura_status?: string | null;  // null|pending|processing|completed|failed
     error_message?: string | null;
     created_at?: string | null;
     completed_at?: string | null;

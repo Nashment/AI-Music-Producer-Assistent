@@ -56,6 +56,35 @@ class Database:
         """Close database connection"""
         await self.engine.dispose()
 
+    async def run_migrations(self) -> None:
+        """
+        Aplica migrações DDL idempotentes ao arrancar.
+
+        Cada instrução usa IF NOT EXISTS / IF EXISTS para ser segura
+        em qualquer ordem de execução e em re-arranques. Adicionar novas
+        migrações no final da lista — NUNCA alterar as existentes.
+        """
+        from sqlalchemy import text
+
+        migrations = [
+            # Migração 003 — estado assíncrono de notação (partitura + tablatura)
+            # Adicionado em: 2025-06 — notação fire-and-forget
+            """
+            ALTER TABLE generations
+                ADD COLUMN IF NOT EXISTS partitura_status VARCHAR(32) DEFAULT NULL
+            """,
+            """
+            ALTER TABLE generations
+                ADD COLUMN IF NOT EXISTS tablatura_status VARCHAR(32) DEFAULT NULL
+            """,
+        ]
+
+        async with self.engine.begin() as conn:
+            for sql in migrations:
+                await conn.execute(text(sql))
+
+        print(f"[DB] {len(migrations)} migration(s) applied (idempotent).")
+
     async def health_check(self) -> bool:
         """Check database connection health"""
         from sqlalchemy import text  # Necessário para o SELECT 1 no SQLAlchemy 2.0+

@@ -334,3 +334,47 @@ class GenerationQueries:
             await db.commit()
             return True
         return False
+
+    @staticmethod
+    async def update_notation_status(
+        db: AsyncSession,
+        generation_id: str,
+        notation_type: str,
+        status: str,
+        storage_key: Optional[str] = None,
+        error_message: Optional[str] = None,
+        clear_storage_key: bool = False,
+    ) -> Optional[Generation]:
+        """Atualiza o estado e a chave R2 de partitura ou tablatura
+        de forma independente do estado geral da geração (áudio).
+
+        notation_type: 'partitura' | 'tablatura'
+        status: 'pending' | 'processing' | 'completed' | 'failed'
+        """
+        try:
+            gen_uuid = uuid.UUID(str(generation_id))
+        except (ValueError, AttributeError):
+            return None
+        stmt = select(Generation).where(Generation.id == gen_uuid)
+        result = await db.execute(stmt)
+        generation = result.scalar_one_or_none()
+        if generation:
+            if notation_type == "partitura":
+                generation.partitura_status = status
+                if storage_key:
+                    generation.partitura_storage_key = storage_key
+                elif clear_storage_key:
+                    generation.partitura_storage_key = None
+                if status == "failed" and error_message:
+                    generation.error_message = error_message
+            elif notation_type == "tablatura":
+                generation.tablatura_status = status
+                if storage_key:
+                    generation.tablatura_storage_key = storage_key
+                elif clear_storage_key:
+                    generation.tablatura_storage_key = None
+                if status == "failed" and error_message:
+                    generation.error_message = error_message
+            await db.commit()
+            await db.refresh(generation)
+        return generation

@@ -320,43 +320,84 @@ async def cut_generation_endpoint(
     )
 
 
-@router.post("/{generation_id}/partitura")
-async def generate_partitura_from_generation(
+@router.post("/{generation_id}/partitura", response_model=GenerationResult, status_code=status.HTTP_202_ACCEPTED)
+async def request_partitura_from_generation(
     generation_id: str,
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    resultado = await GenerationService(db).generate_partitura_from_generation(
+    """Enfileira a geracao de partitura em background. Devolve 202 imediatamente.
+    O cliente faz polling em GET /{id}/status e aguarda partitura_status='completed'.
+    Serve tambem como endpoint de regeneracao (idempotente)."""
+    resultado = await GenerationService(db).request_partitura(
         generation_id=generation_id,
         user_id=str(user_id),
-        partitura_dir=str(PARTITURA_OUTPUT_DIR),
     )
     return _handle_result(
         resultado,
         instance=f"/api/v1/generation/{generation_id}/partitura",
-        success_factory=lambda pdf_path: FileResponse(
-            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
-            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
+        success_factory=lambda gen: JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
         ),
     )
 
 
-@router.post("/{generation_id}/tablature")
-async def generate_tablature_from_generation(
+@router.get("/{generation_id}/partitura")
+async def get_partitura_url(
     generation_id: str,
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    resultado = await GenerationService(db).generate_tablature_from_generation(
+    """Devolve a presigned URL do R2 para a partitura.
+    Retorna 409 se partitura_status != 'completed'."""
+    resultado = await GenerationService(db).get_partitura_url(
         generation_id=generation_id,
         user_id=str(user_id),
-        tablatura_dir=str(TABLATURA_OUTPUT_DIR),
+    )
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/partitura",
+        success_factory=lambda url: JSONResponse(content={"url": url}),
+    )
+
+
+@router.post("/{generation_id}/tablature", response_model=GenerationResult, status_code=status.HTTP_202_ACCEPTED)
+async def request_tablature_from_generation(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Enfileira a geracao de tablatura em background. Devolve 202 imediatamente.
+    Serve tambem como endpoint de regeneracao (idempotente)."""
+    resultado = await GenerationService(db).request_tablature(
+        generation_id=generation_id,
+        user_id=str(user_id),
     )
     return _handle_result(
         resultado,
         instance=f"/api/v1/generation/{generation_id}/tablature",
-        success_factory=lambda pdf_path: FileResponse(
-            path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
-            background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
+        success_factory=lambda gen: JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
         ),
+    )
+
+
+@router.get("/{generation_id}/tablature")
+async def get_tablature_url(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Devolve a presigned URL do R2 para a tablatura.
+    Retorna 409 se tablatura_status != 'completed'."""
+    resultado = await GenerationService(db).get_tablature_url(
+        generation_id=generation_id,
+        user_id=str(user_id),
+    )
+    return _handle_result(
+        resultado,
+        instance=f"/api/v1/generation/{generation_id}/tablature",
+        success_factory=lambda url: JSONResponse(content={"url": url}),
     )

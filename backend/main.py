@@ -90,6 +90,9 @@ def create_app() -> FastAPI:
     async def startup_event():
         """Initialize database on startup"""
         await db.init_db()
+        # Aplicar migrações DDL idempotentes — seguro em re-arranques e
+        # em DBs já existentes (usa ADD COLUMN IF NOT EXISTS internamente).
+        await db.run_migrations()
         health = await db.health_check()
         if health:
             print("Database connection established")

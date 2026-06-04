@@ -1,12 +1,15 @@
 {
   "name": "frontend",
   "version": "0.1.0",
-  "description": "Frontend (React + TypeScript + Vite) para o backend de geração musical.",
+  "description": "Frontend (React + TypeScript + Vite) para o backend de gera\u00e7\u00e3o musical.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:unit": "vitest run",
+    "test": "vitest run && playwright test"
   },
   "dependencies": {
     "react": "^19.2.0",
@@ -20,6 +23,12 @@
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.2"
+    "vite": "^7.2.2",
+    "@playwright/test": "^1.44.0",
+    "vitest": "^1.6.0",
+    "@vitest/ui": "^1.6.0",
+    "jsdom": "^24.1.0",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.5.2"
   }
 }

@@ -44,6 +44,11 @@ function AudioDetailPage() {
     const [confirmDel, setConfirmDel] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
+    // ----- estado: eliminar geração/corte ------------------------------
+    /** id da geração/corte pendente de confirmação de eliminação */
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+    const [deletingGeneration, setDeletingGeneration] = useState(false);
+
     // ----- estado: gerações + cortes -----------------------------------
     const gens = useAudioGenerations(audioId);
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -114,6 +119,26 @@ function AudioDetailPage() {
         }
     };
 
+    // ----- handler: eliminar geração/corte ----------------------------
+    const handleDeleteRequest = (id: string) => {
+        setPendingDeleteId(id);
+    };
+
+    const handleDeleteGenerationConfirm = async () => {
+        if (!pendingDeleteId) return;
+        setDeletingGeneration(true);
+        try {
+            await gens.deleteGeneration(pendingDeleteId);
+            // Limpar seleção se o item eliminado estava seleccionado
+            if (selectedId === pendingDeleteId) setSelectedId(null);
+            setPendingDeleteId(null);
+        } catch (err) {
+            toast.error(describeError(err, t.generationTree.deleteLabel));
+        } finally {
+            setDeletingGeneration(false);
+        }
+    };
+
     if (loading) return <Spinner block label={t.audioDetail.loading} />;
     if (error) return <p className="error-text">{error}</p>;
     if (!audio || !projectId || !audioId) return null;
@@ -166,6 +191,7 @@ function AudioDetailPage() {
                             tree={gens.tree}
                             selectedId={selectedId}
                             onSelect={g => setSelectedId(g.id)}
+                            onDelete={handleDeleteRequest}
                         />
                         {selectedId ? (
                             <button
@@ -195,6 +221,7 @@ function AudioDetailPage() {
                             <CutActionPanel
                                 cut={selected}
                                 onError={msg => toast.error(msg)}
+                                onNotationRequested={gens.refresh}
                             />
                         </div>
                     ) : (
@@ -218,6 +245,18 @@ function AudioDetailPage() {
                 busy={deleting}
                 onConfirm={handleDelete}
                 onCancel={() => setConfirmDel(false)}
+            />
+
+            {/* Confirmação de eliminação de geração/corte */}
+            <ConfirmDialog
+                open={pendingDeleteId !== null}
+                title={t.generationTree.deleteConfirmTitle}
+                message={t.generationTree.deleteConfirmMsg}
+                confirmLabel={t.generationTree.deleteConfirmLabel}
+                danger
+                busy={deletingGeneration}
+                onConfirm={handleDeleteGenerationConfirm}
+                onCancel={() => setPendingDeleteId(null)}
             />
         </div>
     );

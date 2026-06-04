@@ -89,6 +89,49 @@
     white-space: nowrap;
 }
 
+/* ------------------- Gen-tree row: item + delete button ------------------ */
+/*
+ * Cada linha da árvore é um .gen-tree-row (flex) que contém:
+ *   - .gen-tree-item  (flex:1, botão de seleção existente)
+ *   - .gen-tree-delete (flex-shrink:0, botão de eliminar)
+ * O botão de eliminar fica oculto (opacity:0) e surge no hover da linha.
+ */
+.gen-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.gen-tree-row .gen-tree-item {
+    flex: 1;
+    min-width: 0;
+}
+.gen-tree-delete {
+    flex-shrink: 0;
+    opacity: 0;
+    padding: 0.3rem 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--danger);
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+}
+.gen-tree-row:hover .gen-tree-delete,
+.gen-tree-row:focus-within .gen-tree-delete {
+    opacity: 1;
+}
+.gen-tree-delete:hover {
+    background: var(--danger-soft);
+    border-color: rgba(239, 91, 107, 0.35);
+}
+.gen-tree-delete:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--danger);
+    outline-offset: 1px;
+}
+
 /* --------------------------- Waveform cutter ---------------------------- */
 .waveform-cutter {
     display: flex;
