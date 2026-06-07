@@ -17,7 +17,7 @@ class ProjetoErro:
 @dataclass(frozen=True)
 class ProjetoNaoEncontrado(ProjetoErro):
     """O projeto nao existe ou nao pertence ao utilizador."""
-    project_id: Any = None
+    project_id: Any
 
 
 @dataclass(frozen=True)
@@ -28,4 +28,4 @@ class TituloProjetoInvalido(ProjetoErro):
 @dataclass(frozen=True)
 class TituloProjetoDuplicado(ProjetoErro):
     """Ja existe um projeto com este titulo para este utilizador."""
-    titulo: str = ""
+    titulo: str

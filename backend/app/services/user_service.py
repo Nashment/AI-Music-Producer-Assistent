@@ -6,13 +6,13 @@ lancar excecoes. A traducao para HTTP fica exclusivamente no endpoint.
 """
 
 import uuid
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
 import httpx
 import jwt
 
+from app.core.config import settings
 from app.data.models import OAuthProvider as ModelOAuthProvider
 from app.data import UserQueries
 from app.data.oauth_queries import OAuthQueries
@@ -32,11 +32,11 @@ class UserService:
 
     def __init__(self, db_session=None):
         self.db = db_session
-        self.secret_key = os.getenv("JWT_SECRET_KEY")
+        self.secret_key = settings.JWT_SECRET_KEY
         if not self.secret_key:
             raise RuntimeError("JWT_SECRET_KEY nao esta definida. Configure no .env")
-        self.algorithm              = os.getenv("JWT_ALGORITHM", "HS256")
-        self.token_expiration_hours = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
+        self.algorithm              = settings.JWT_ALGORITHM
+        self.token_expiration_hours = settings.JWT_EXPIRATION_HOURS
 
     # ------------------------------------------------------------------
     # JWT
@@ -66,8 +66,8 @@ class UserService:
     def get_google_authorization_url(self) -> str:
         """Devolve o URL de autorizacao do Google para redirecionar o utilizador."""
         params = {
-            "client_id":     os.getenv("GOOGLE_CLIENT_ID"),
-            "redirect_uri":  os.getenv("GOOGLE_REDIRECT_URI"),
+            "client_id":     settings.GOOGLE_CLIENT_ID,
+            "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
             "response_type": "code",
             "scope":         "openid email profile",
             "access_type":   "offline",
@@ -86,9 +86,9 @@ class UserService:
                     self.GOOGLE_TOKEN_URL,
                     data={
                         "code":          code,
-                        "client_id":     os.getenv("GOOGLE_CLIENT_ID"),
-                        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
-                        "redirect_uri":  os.getenv("GOOGLE_REDIRECT_URI"),
+                        "client_id":     settings.GOOGLE_CLIENT_ID,
+                        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                        "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
                         "grant_type":    "authorization_code",
                     },
                 )

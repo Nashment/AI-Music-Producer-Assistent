@@ -1,13 +1,10 @@
-import requests
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
+import requests
 
-# Load backend/.env when this script runs directly.
-load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+from app.core.config import settings
 
-API_KEY = os.getenv("SUNO_API_KEY")
+API_KEY = settings.SUNO_API_KEY
 BASE_URL = "https://api.sunoapi.org"
 TASK_ID = "f46e6b34d0939a057aeb379afa2cac6c"
 

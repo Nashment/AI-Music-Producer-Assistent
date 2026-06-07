@@ -31,10 +31,8 @@ except ImportError as e:
     cortar_audio = obter_duracao_audio = None
 
 try:
+    from worker.audio_utils.audio_extractor import extrair_midi_do_audio
     from worker.audio_utils.audio_to_tablature2 import (
-        extrair_midi_do_audio,
-        obter_ultimo_erro_extracao,
-        obter_ultimo_erro_compilacao,
         extrair_lista_notas,
         otimizar_tablatura,
         converter_midi_para_ly,
@@ -44,15 +42,15 @@ try:
     )
 except ImportError as e:
     print(f"Warning: Could not import tablature modules: {e}")
-    extrair_midi_do_audio = obter_ultimo_erro_extracao = obter_ultimo_erro_compilacao = None
+    extrair_midi_do_audio = None
     extrair_lista_notas = otimizar_tablatura = converter_midi_para_ly = None
     injetar_inteligencia_no_ly = forcar_tablatura_no_ly = compilar_pdf_lilypond = None
 
 try:
-    from worker.audio_utils.audio_to_partitura import exportar_pdf_automatico, obter_ultimo_erro_partitura
+    from worker.audio_utils.audio_to_partitura import exportar_pdf_automatico
 except ImportError as e:
     print(f"Warning: Could not import partitura modules: {e}")
-    exportar_pdf_automatico = obter_ultimo_erro_partitura = None
+    exportar_pdf_automatico = None
 
 
 class GenerationService:
@@ -273,8 +271,11 @@ class GenerationService:
             if isinstance(midi_resultado, Falha):
                 return midi_resultado
 
-            result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_path))
-            if not result or not pdf_path.exists():
+            try:
+                await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_path))
+            except RuntimeError:
+                return Falha(FalhaProcessamentoAudio(operacao="geracao_partitura_pdf"))
+            if not pdf_path.exists():
                 return Falha(FalhaProcessamentoAudio(operacao="geracao_partitura_pdf"))
 
             return Sucesso(str(pdf_path))
@@ -360,15 +361,18 @@ class GenerationService:
                     return Falha(IntervaloCorteInvalido(detalhe="O inicio esta fora da duracao do audio."))
                 fim_clamped = min(fim_segundos, duracao_total)
 
-                ok = await asyncio.to_thread(
-                    cortar_audio,
-                    str(parent_path),
-                    str(out_tmp),
-                    float(inicio_segundos),
-                    float(fim_clamped),
-                )
+                try:
+                    await asyncio.to_thread(
+                        cortar_audio,
+                        str(parent_path),
+                        str(out_tmp),
+                        float(inicio_segundos),
+                        float(fim_clamped),
+                    )
+                except RuntimeError:
+                    return Falha(FalhaProcessamentoAudio(operacao="corte_audio"))
 
-            if not ok or not out_tmp.exists():
+            if not out_tmp.exists():
                 return Falha(FalhaProcessamentoAudio(operacao="corte_audio"))
 
             cut_uuid = uuid.uuid4()
@@ -567,11 +571,11 @@ class GenerationService:
                 storage.delete_file(s3_key)
 
     async def _extrair_midi_async(self, input_path: Path, midi_path: Path) -> Resultado:
-        midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(input_path), str(midi_path))
-        ok, midi_data, _ = self._normalize_midi_extract_result(midi_result)
-        if not ok:
+        try:
+            midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(input_path), str(midi_path))
+            return Sucesso(midi_data)
+        except RuntimeError:
             return Falha(FalhaProcessamentoAudio(operacao="extracao_midi"))
-        return Sucesso(midi_data)
 
     async def _aplicar_estilo_tablatura_async(self, ly_path: Path, midi_data) -> Resultado:
         notas_midi = extrair_lista_notas(midi_data) if midi_data else []
@@ -585,24 +589,21 @@ class GenerationService:
         return Sucesso(None)
 
     async def _compilar_pdf_com_fallback_async(self, midi_path: Path, ly_path: Path) -> Resultado:
-        if await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path)):
+        try:
+            await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
             return Sucesso(None)
+        except RuntimeError:
+            pass
 
+        # Fallback: recriar .ly limpo sem dedilhado e tentar de novo
         ly_path.unlink(missing_ok=True)
         if not await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path)):
             return Falha(FalhaProcessamentoAudio(operacao="conversao_midi_ly_fallback"))
         if not await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path)):
             return Falha(FalhaProcessamentoAudio(operacao="tablatura_padrao_fallback"))
-        if not await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path)):
+        try:
+            await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+        except RuntimeError:
             return Falha(FalhaProcessamentoAudio(operacao="compilacao_pdf"))
 
         return Sucesso(None)
-
-    @staticmethod
-    def _normalize_midi_extract_result(result):
-        if isinstance(result, tuple):
-            ok       = bool(result[0])
-            midi_data = result[1] if len(result) > 1 else None
-            error    = result[2] if len(result) > 2 else None
-            return ok, midi_data, error
-        return bool(result), None, None

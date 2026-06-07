@@ -22,54 +22,54 @@ class GeneracaoErro:
 @dataclass(frozen=True)
 class AudioNaoEncontrado(GeneracaoErro):
     """O audio referenciado nao existe ou nao pertence ao utilizador."""
-    audio_id: Any = None
+    audio_id: Any
 
 
 @dataclass(frozen=True)
 class GeracaoNaoEncontrada(GeneracaoErro):
     """A geracao pedida nao existe ou nao pertence ao utilizador."""
-    generation_id: str = ""
+    generation_id: str
 
 
 @dataclass(frozen=True)
 class CoverUrlInvalido(GeneracaoErro):
     """O upload_url fornecido para cover nao e uma URL publica (http/https)."""
-    url_recebido: str = ""
+    url_recebido: str
 
 
 @dataclass(frozen=True)
 class PesoAudioInvalido(GeneracaoErro):
     """O audio_weight esta fora do intervalo [0.0, 1.0]."""
-    valor: float = 0.0
+    valor: float
 
 
 @dataclass(frozen=True)
 class WorkerIndisponivel(GeneracaoErro):
     """O modulo de worker Celery nao esta disponivel neste ambiente."""
-    detalhe: str = ""
+    detalhe: str
 
 
 @dataclass(frozen=True)
 class FilaIndisponivel(GeneracaoErro):
     """Nao foi possivel enfileirar a tarefa no Celery/Redis."""
-    detalhe: str = ""
+    detalhe: str
 
 
 @dataclass(frozen=True)
 class FalhaProcessamentoAudio(GeneracaoErro):
     """A operacao de processamento de audio falhou (ex: extracao MIDI, compilacao PDF)."""
-    operacao: str = ""
+    operacao: str
 
 
 @dataclass(frozen=True)
 class IntervaloCorteInvalido(GeneracaoErro):
     """O intervalo de corte e invalido (inicio>=fim, fora dos limites do
     audio, ou janela maior do que o maximo permitido)."""
-    detalhe: str = ""
+    detalhe: str
 
 
 @dataclass(frozen=True)
 class FicheiroGeracaoIndisponivel(GeneracaoErro):
     """A geracao existe mas o ficheiro de audio fisico nao esta disponivel
     (ainda em processamento, perdido em disco, ou status != COMPLETED)."""
-    detalhe: str = ""
+    detalhe: str

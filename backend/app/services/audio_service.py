@@ -217,7 +217,10 @@ class AudioService:
         output_tmp = Path(tempfile.mktemp(suffix=".wav"))
         try:
             with storage.temp_download(record.storage_key) as input_path:
-                cortar_audio(str(input_path), str(output_tmp), inicio_segundos, actual_end)
+                try:
+                    cortar_audio(str(input_path), str(output_tmp), inicio_segundos, actual_end)
+                except RuntimeError:
+                    return Falha(FalhaProcessamento(operacao="corte_audio"))
 
             if not output_tmp.exists():
                 return Falha(FalhaProcessamento(operacao="corte_audio"))

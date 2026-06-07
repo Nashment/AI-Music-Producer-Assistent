@@ -13,7 +13,7 @@ O que NAO esta aqui:
 """
 
 import uuid
-from typing import Callable, List
+from typing import List
 
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse, Response
@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.project_service import ProjectService
 from app.api.dependencies import get_db, get_current_user_id
-from app.domain.result import Sucesso, Falha
+from app.api.responses import problem_json, handle_result
 from app.domain.errors.project_errors import (
     ProjetoNaoEncontrado,
     TituloProjetoInvalido,
@@ -37,46 +37,22 @@ router = APIRouter()
 # Tratamento de erros HTTP
 # ===========================================================================
 
-def _problem_json(status_code: int, type_slug: str, title: str, detail: str, instance: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "type":     f"/errors/{type_slug}",
-            "title":    title,
-            "status":   status_code,
-            "detail":   detail,
-            "instance": instance,
-        },
-        media_type="application/problem+json",
-    )
-
 
 def _handle_project_error(erro: ProjetoErro, instance: str) -> JSONResponse:
     match erro:
         case ProjetoNaoEncontrado():
-            return _problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
+            return problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
                 "O projeto pedido nao foi encontrado.", instance)
         case TituloProjetoInvalido():
-            return _problem_json(400, "requisicao-invalida", "Requisicao Invalida",
+            return problem_json(400, "requisicao-invalida", "Requisicao Invalida",
                 "O titulo do projeto nao pode estar vazio.", instance)
         case TituloProjetoDuplicado(titulo=t):
-            return _problem_json(409, "titulo-duplicado", "Titulo Duplicado",
+            return problem_json(409, "titulo-duplicado", "Titulo Duplicado",
                 f"Ja existe um projeto com o titulo '{t}'.", instance)
         case _:
-            return _problem_json(500, "erro-interno", "Erro Interno",
+            return problem_json(500, "erro-interno", "Erro Interno",
                 "Ocorreu um erro inesperado no servico de projetos.", instance)
 
-
-def _handle_result(
-    resultado: Sucesso | Falha,
-    instance: str,
-    success_factory: Callable,
-) -> Response:
-    match resultado:
-        case Falha(erro=erro):
-            return _handle_project_error(erro, instance)
-        case Sucesso(valor=valor):
-            return success_factory(valor)
 
 
 # ===========================================================================
@@ -96,10 +72,7 @@ async def create_project(
         description=project_data.description,
         tempo=project_data.tempo,
     )
-    return _handle_result(
-        resultado,
-        instance="/api/v1/projects",
-        success_factory=lambda project: project,
+    return handle_result(resultado, instance="/api/v1/projects", on_error=_handle_project_error, success_factory=lambda project: project,
     )
 
 
@@ -110,10 +83,7 @@ async def list_user_projects(
 ):
     """Get all projects for authenticated user."""
     resultado = await ProjectService(db).list_user_projects(user_id=str(user_id))
-    return _handle_result(
-        resultado,
-        instance="/api/v1/projects",
-        success_factory=lambda projects: projects,
+    return handle_result(resultado, instance="/api/v1/projects", on_error=_handle_project_error, success_factory=lambda projects: projects,
     )
 
 
@@ -125,10 +95,7 @@ async def get_project(
 ):
     """Get specific project by ID."""
     resultado = await ProjectService(db).get_project(project_id=project_id, user_id=str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/projects/{project_id}",
-        success_factory=lambda project: project,
+    return handle_result(resultado, instance=f"/api/v1/projects/{project_id}", on_error=_handle_project_error, success_factory=lambda project: project,
     )
 
 
@@ -145,10 +112,7 @@ async def update_project(
         user_id=str(user_id),
         update_data=project_update.model_dump(exclude_unset=True),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/projects/{project_id}",
-        success_factory=lambda project: project,
+    return handle_result(resultado, instance=f"/api/v1/projects/{project_id}", on_error=_handle_project_error, success_factory=lambda project: project,
     )
 
 
@@ -160,8 +124,5 @@ async def delete_project(
 ):
     """Delete a project."""
     resultado = await ProjectService(db).delete_project(project_id=project_id, user_id=str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/projects/{project_id}",
-        success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
+    return handle_result(resultado, instance=f"/api/v1/projects/{project_id}", on_error=_handle_project_error, success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
     )

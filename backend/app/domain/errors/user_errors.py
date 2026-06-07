@@ -17,7 +17,7 @@ class UtilizadorErro:
 @dataclass(frozen=True)
 class UtilizadorNaoEncontrado(UtilizadorErro):
     """O utilizador nao existe."""
-    user_id: Any = None
+    user_id: Any
 
 
 @dataclass(frozen=True)
@@ -28,10 +28,10 @@ class UsernameInvalido(UtilizadorErro):
 @dataclass(frozen=True)
 class UsernameDuplicado(UtilizadorErro):
     """O username ja esta em uso por outro utilizador."""
-    username: str = ""
+    username: str
 
 
 @dataclass(frozen=True)
 class FalhaAutenticacaoGoogle(UtilizadorErro):
     """A autenticacao com o Google falhou."""
-    detalhe: str = ""
+    detalhe: str

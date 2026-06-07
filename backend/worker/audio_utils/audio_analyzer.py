@@ -42,54 +42,39 @@ def detetar_tom_base(chroma):
 
 def ajustar_tom_pela_progressao(tom_ks, progressao):
     """Corrige modo (Maior/Menor) pela progressão de acordes"""
-    print(f"DEBUG: tom_ks = {tom_ks}, progressao = {progressao}")
-
     if len(progressao) == 0:
-        print("DEBUG: Progressão vazia, retornando tom_ks")
         return tom_ks
 
     primeiro_acorde = progressao[0]
     ultimo_acorde = progressao[-1]
-    print(f"DEBUG: primeiro_acorde = {primeiro_acorde}, ultimo_acorde = {ultimo_acorde}")
 
     notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     nota_tom, modo = tom_ks.split(" ")
     idx = notas.index(nota_tom)
-    print(f"DEBUG: nota_tom = {nota_tom}, modo = {modo}, idx = {idx}")
 
     if modo == "Maior":
         idx_relativa = (idx - 3) % 12
         acorde_relativo_menor = notas[idx_relativa] + "m"
-        print(f"DEBUG: Modo Maior - idx_relativa = {idx_relativa}, acorde_relativo_menor = {acorde_relativo_menor}")
-
         if primeiro_acorde == acorde_relativo_menor or ultimo_acorde == acorde_relativo_menor:
-            print(f"DEBUG: Encontrado {acorde_relativo_menor}, retornando {notas[idx_relativa]} Menor")
             return notas[idx_relativa] + " Menor"
 
     elif modo == "Menor":
         idx_relativa = (idx + 3) % 12
         acorde_relativo_maior = notas[idx_relativa]
-        print(f"DEBUG: Modo Menor - idx_relativa = {idx_relativa}, acorde_relativo_maior = {acorde_relativo_maior}")
-
         if primeiro_acorde == acorde_relativo_maior or ultimo_acorde == acorde_relativo_maior:
-            print(f"DEBUG: Encontrado {acorde_relativo_maior}, retornando {notas[idx_relativa]} Maior")
             return notas[idx_relativa] + " Maior"
 
-    print(f"DEBUG: Nenhuma correção feita, retornando {tom_ks}")
     return tom_ks
 
 
 def analisar_audio_completo(caminho_wav):
-    print(f"A ler o ficheiro '{caminho_wav}'...")
     y, sr = librosa.load(caminho_wav, sr=None)
 
     duracao = librosa.get_duration(y=y, sr=sr)
 
-    print("A calcular os BPMs...")
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr, start_bpm=75)
     bpm = float(np.atleast_1d(tempo)[0])
 
-    print("A extrair a harmonia...")
     chroma = librosa.feature.chroma_cens(y=y, sr=sr, hop_length=4096)
 
     templates = obter_templates_acordes()
@@ -117,7 +102,6 @@ def analisar_audio_completo(caminho_wav):
         correlacoes = [np.dot(media_bloco, t) for t in vetores_acordes]
         melhor_acorde = nomes_acordes[np.argmax(correlacoes)]
         acordes_brutos.append(melhor_acorde)
-    print(f"DEBUG: acordes_brutos = {acordes_brutos}")
     # Filtra acordes que aparecem menos de MIN_BLOCOS consecutivos (artefactos de transição)
     MIN_BLOCOS = 2  # remove o filtro de duração por agora
     acordes_detetados = []
@@ -133,10 +117,7 @@ def analisar_audio_completo(caminho_wav):
         i += count
 
     tom_matematico = detetar_tom_base(chroma)
-    print(f"DEBUG: tom_matematico = {tom_matematico}")
-    print(f"DEBUG: acordes_detetados = {acordes_detetados}")
     tom_corrigido = ajustar_tom_pela_progressao(tom_matematico, acordes_detetados)
-    print(f"DEBUG: tom_corrigido = {tom_corrigido}")
 
     return {
         "bpm": round(bpm),

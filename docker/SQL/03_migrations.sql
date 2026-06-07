@@ -3,6 +3,10 @@
 -- ==========================================
 -- Cada bloco usa IF EXISTS / DO $$ para ser idempotente
 -- (pode ser executado múltiplas vezes sem erros).
+--
+-- NOTA: As migrações 002 e 003 já estão incorporadas em 02_create_tables.sql.
+-- Este ficheiro serve apenas para atualizar bases de dados existentes criadas
+-- com versões anteriores do schema.
 
 -- ==========================================
 -- Migração 001 — remover faixa_separada_path da tabela generations

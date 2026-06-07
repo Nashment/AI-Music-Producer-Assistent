@@ -34,10 +34,8 @@ except ImportError as e:
     guardar_ficheiro = None
 
 try:
+    from worker.audio_utils.audio_extractor import extrair_midi_do_audio
     from worker.audio_utils.audio_to_tablature2 import (
-        extrair_midi_do_audio,
-        obter_ultimo_erro_extracao,
-        obter_ultimo_erro_compilacao,
         extrair_lista_notas,
         otimizar_tablatura,
         converter_midi_para_ly,
@@ -48,8 +46,6 @@ try:
 except ImportError as e:
     print(f"Warning: Could not import tablature modules: {e}")
     extrair_midi_do_audio = None
-    obter_ultimo_erro_extracao = None
-    obter_ultimo_erro_compilacao = None
     extrair_lista_notas = None
     otimizar_tablatura = None
     converter_midi_para_ly = None
@@ -96,10 +92,9 @@ _BEMOIS_PARA_SUSTENIDOS = {
 }
 LIMIAR_BPM = 5
 
-DEFAULT_GENERATIONS_ROOT = Path(__file__).resolve().parents[1] / "generations"
-AUDIO_OUTPUT_DIR     = Path(os.getenv("GENERATIONS_AUDIO_DIR",     str(DEFAULT_GENERATIONS_ROOT / "audio")))
-PARTITURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_PARTITURA_DIR", str(DEFAULT_GENERATIONS_ROOT / "partitura")))
-TABLATURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_TABLATURA_DIR", str(DEFAULT_GENERATIONS_ROOT / "tablatura")))
+AUDIO_OUTPUT_DIR     = Path(settings.GENERATIONS_AUDIO_DIR)
+PARTITURA_OUTPUT_DIR = Path(settings.GENERATIONS_PARTITURA_DIR)
+TABLATURA_OUTPUT_DIR = Path(settings.GENERATIONS_TABLATURA_DIR)
 
 
 def _new_task_session() -> tuple:
@@ -178,10 +173,7 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
                 if not extrair_midi_do_audio:
                     raise RuntimeError("basic_pitch nao disponivel no worker.")
 
-                midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-                midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
-                if not midi_ok:
-                    raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+                midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
 
                 ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
                 if not ok_ly:
@@ -272,13 +264,10 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
                 if not exportar_pdf_automatico:
                     raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
 
-                midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-                midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
-                if not midi_ok:
-                    raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+                midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
 
-                result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
-                if not result or not pdf_final.exists():
+                await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+                if not pdf_final.exists():
                     raise RuntimeError("PDF de partitura nao foi criado.")
 
                 # Chave R2 estavel e determinista — permite regerar no mesmo path
@@ -388,8 +377,8 @@ async def _generate_partitura_from_key_async(audio_storage_key: str, prefix: str
             midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
             if not midi_ok:
                 raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
-            result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
-            if not result or not pdf_final.exists():
+            await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+            if not pdf_final.exists():
                 raise RuntimeError("PDF de partitura nao foi criado.")
             r2_key = f"partitura/{prefix}_{uuid.uuid4().hex[:8]}.pdf"
             if not storage.upload_file(str(pdf_final), r2_key):
@@ -692,22 +681,16 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
     midi_path = PARTITURA_OUTPUT_DIR / f"{generation_id}.mid"
 
     try:
-        midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-        midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
-        if not midi_ok:
-            if midi_error:
-                raise RuntimeError(f"Falha na extracao MIDI: {midi_error}")
-            if obter_ultimo_erro_extracao:
-                last_error = obter_ultimo_erro_extracao()
-                if last_error:
-                    raise RuntimeError(f"Falha na extracao MIDI: {last_error}")
-            raise RuntimeError("Falha na extracao MIDI.")
+        midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
 
         if exportar_pdf_automatico:
             p_pdf = PARTITURA_OUTPUT_DIR / f"{generation_id}_partitura.pdf"
-            result = await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(p_pdf))
-            if result and p_pdf.exists():
-                partitura_path = str(p_pdf)
+            try:
+                await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(p_pdf))
+                if p_pdf.exists():
+                    partitura_path = str(p_pdf)
+            except RuntimeError:
+                pass  # partitura opcional — continua para tablatura
 
         if all([converter_midi_para_ly, injetar_inteligencia_no_ly, forcar_tablatura_no_ly,
                 compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
@@ -897,10 +880,3 @@ def _build_suno_prompt(prompt: str, instrument: str, genre: Optional[str], audio
     return ", ".join(parts)
 
 
-def _normalize_midi_extract_result(result):
-    if isinstance(result, tuple):
-        ok = bool(result[0])
-        midi_data = result[1] if len(result) > 1 else None
-        error     = result[2] if len(result) > 2 else None
-        return ok, midi_data, error
-    return bool(result), None, None

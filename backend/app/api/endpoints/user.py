@@ -13,7 +13,6 @@ O que NAO esta aqui:
 """
 
 import uuid
-from typing import Callable
 
 from fastapi import APIRouter, status, Depends
 from fastapi.responses import JSONResponse, Response
@@ -21,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.user_service import UserService
 from app.api.dependencies import get_db, get_current_user_id
-from app.domain.result import Sucesso, Falha
+from app.api.responses import problem_json, handle_result
 from app.domain.errors.user_errors import (
     UtilizadorNaoEncontrado,
     UsernameInvalido,
@@ -43,19 +42,6 @@ router = APIRouter()
 # Tratamento de erros HTTP
 # ===========================================================================
 
-def _problem_json(status_code: int, type_slug: str, title: str, detail: str, instance: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "type":     f"/errors/{type_slug}",
-            "title":    title,
-            "status":   status_code,
-            "detail":   detail,
-            "instance": instance,
-        },
-        media_type="application/problem+json",
-    )
-
 
 def _handle_user_error(erro: UtilizadorErro, instance: str) -> JSONResponse:
     match erro:
@@ -64,32 +50,21 @@ def _handle_user_error(erro: UtilizadorErro, instance: str) -> JSONResponse:
             # na BD (ex: BD foi recriada), o token e efectivamente invalido
             # — devolvemos 401 para o frontend limpar o token e re-fazer login,
             # em vez de 404 que faz o ProtectedRoute entrar em loop.
-            return _problem_json(401, "autenticacao-falhada", "Sessao Invalida",
+            return problem_json(401, "autenticacao-falhada", "Sessao Invalida",
                 "O utilizador associado a este token ja nao existe. Faz login novamente.", instance)
         case UsernameInvalido():
-            return _problem_json(400, "requisicao-invalida", "Requisicao Invalida",
+            return problem_json(400, "requisicao-invalida", "Requisicao Invalida",
                 "O username nao pode estar vazio.", instance)
         case UsernameDuplicado(username=u):
-            return _problem_json(409, "username-duplicado", "Username Duplicado",
+            return problem_json(409, "username-duplicado", "Username Duplicado",
                 f"O username '{u}' ja esta em uso.", instance)
         case FalhaAutenticacaoGoogle():
-            return _problem_json(401, "autenticacao-falhada", "Autenticacao Falhada",
+            return problem_json(401, "autenticacao-falhada", "Autenticacao Falhada",
                 "Nao foi possivel autenticar com o Google. Verifique o codigo e tente novamente.", instance)
         case _:
-            return _problem_json(500, "erro-interno", "Erro Interno",
+            return problem_json(500, "erro-interno", "Erro Interno",
                 "Ocorreu um erro inesperado no servico de utilizador.", instance)
 
-
-def _handle_result(
-    resultado: Sucesso | Falha,
-    instance: str,
-    success_factory: Callable,
-) -> Response:
-    match resultado:
-        case Falha(erro=erro):
-            return _handle_user_error(erro, instance)
-        case Sucesso(valor=valor):
-            return success_factory(valor)
 
 
 # ===========================================================================
@@ -111,10 +86,7 @@ async def google_oauth_callback(
 ):
     """Callback do Google OAuth."""
     resultado = await UserService(db).google_oauth_login(code=code)
-    return _handle_result(
-        resultado,
-        instance="/api/v1/user/auth/google/callback",
-        success_factory=lambda r: TokenResponse(
+    return handle_result(resultado, instance="/api/v1/user/auth/google/callback", on_error=_handle_user_error, success_factory=lambda r: TokenResponse(
             access_token=r["access_token"],
             token_type=r["token_type"],
             user=UserResponse(**r["user"]),
@@ -129,10 +101,7 @@ async def get_current_user(
 ):
     """Devolve o perfil do utilizador autenticado."""
     resultado = await UserService(db).get_user(user_id=user_id)
-    return _handle_result(
-        resultado,
-        instance="/api/v1/user/me",
-        success_factory=lambda user: user,
+    return handle_result(resultado, instance="/api/v1/user/me", on_error=_handle_user_error, success_factory=lambda user: user,
     )
 
 
@@ -144,10 +113,7 @@ async def update_username(
 ):
     """Actualiza o username do utilizador autenticado."""
     resultado = await UserService(db).update_username(user_id=user_id, username=update_data.username)
-    return _handle_result(
-        resultado,
-        instance="/api/v1/user/me",
-        success_factory=lambda user: user,
+    return handle_result(resultado, instance="/api/v1/user/me", on_error=_handle_user_error, success_factory=lambda user: user,
     )
 
 
@@ -158,8 +124,5 @@ async def delete_account(
 ):
     """Apaga a conta do utilizador autenticado."""
     resultado = await UserService(db).delete_user(user_id=user_id)
-    return _handle_result(
-        resultado,
-        instance="/api/v1/user/me",
-        success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
+    return handle_result(resultado, instance="/api/v1/user/me", on_error=_handle_user_error, success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
     )

@@ -7,7 +7,7 @@ exclusivamente no endpoint.
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 
 class AudioErro:
@@ -17,46 +17,46 @@ class AudioErro:
 @dataclass(frozen=True)
 class AudioNaoEncontrado(AudioErro):
     """O audio nao existe ou nao pertence ao utilizador."""
-    audio_id: Any = None
+    audio_id: Any
 
 
 @dataclass(frozen=True)
 class ProjetoNaoEncontrado(AudioErro):
     """O projeto nao existe ou nao pertence ao utilizador."""
-    project_id: Any = None
+    project_id: Any
 
 
 @dataclass(frozen=True)
 class FormatoAudioInvalido(AudioErro):
     """A extensao do ficheiro nao e suportada."""
-    extensao: str = ""
+    extensao: str
 
 
 @dataclass(frozen=True)
 class FicheiroAudioGrande(AudioErro):
     """O ficheiro excede o limite de tamanho permitido."""
-    tamanho_mb: float = 0.0
+    tamanho_mb: float
 
 
 @dataclass(frozen=True)
 class FicheiroFisicoNaoEncontrado(AudioErro):
     """O registo existe na BD mas o ficheiro fisico foi eliminado."""
-    audio_id: Any = None
+    audio_id: Optional[Any] = None
 
 
 @dataclass(frozen=True)
 class ModuloAudioIndisponivel(AudioErro):
     """O modulo de processamento nao esta disponivel neste ambiente."""
-    modulo: str = ""
+    modulo: str
 
 
 @dataclass(frozen=True)
 class FalhaProcessamento(AudioErro):
     """Operacao de processamento de audio falhou."""
-    operacao: str = ""
+    operacao: str
 
 
 @dataclass(frozen=True)
 class IntervaloInvalido(AudioErro):
     """Os parametros de intervalo temporal sao invalidos."""
-    detalhe: str = ""
+    detalhe: str

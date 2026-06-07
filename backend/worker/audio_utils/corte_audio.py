@@ -24,39 +24,32 @@ def cortar_audio(
     ficheiro_saida: str,
     inicio_segundos: float = 0.0,
     fim_segundos: float = 30.0,
-) -> bool:
+) -> None:
     """Corta `ficheiro_entrada` entre os tempos dados e grava em `ficheiro_saida`.
 
-    Devolve True em caso de sucesso, False em caso de erro.
+    Levanta RuntimeError em caso de erro.
     """
-    try:
-        if fim_segundos <= inicio_segundos:
-            return False
-        if inicio_segundos < 0:
-            return False
+    if inicio_segundos < 0:
+        raise RuntimeError("O tempo de início não pode ser negativo.")
+    if fim_segundos <= inicio_segundos:
+        raise RuntimeError("O tempo de fim deve ser maior que o tempo de início.")
 
-        Path(ficheiro_saida).parent.mkdir(parents=True, exist_ok=True)
+    Path(ficheiro_saida).parent.mkdir(parents=True, exist_ok=True)
 
-        y, sr = librosa.load(ficheiro_entrada, sr=None)
+    y, sr = librosa.load(ficheiro_entrada, sr=None)
 
-        total_samples = len(y)
-        inicio_samples = int(inicio_segundos * sr)
-        fim_samples = min(int(fim_segundos * sr), total_samples)
+    total_samples = len(y)
+    inicio_samples = int(inicio_segundos * sr)
+    fim_samples = min(int(fim_segundos * sr), total_samples)
 
-        if inicio_samples >= total_samples:
-            return False
+    if inicio_samples >= total_samples:
+        raise RuntimeError("O tempo de início está fora da duração do ficheiro.")
 
-        y_cortado = y[inicio_samples:fim_samples]
-        if len(y_cortado) == 0:
-            return False
+    y_cortado = y[inicio_samples:fim_samples]
+    if len(y_cortado) == 0:
+        raise RuntimeError("O intervalo de corte resultou em áudio vazio.")
 
-        sf.write(ficheiro_saida, y_cortado, sr)
-        return True
-
-    except Exception as e:
-        # Mantemos o print para logs locais sem mascarar problemas reais
-        print(f"[corte_audio] Erro: {e}")
-        return False
+    sf.write(ficheiro_saida, y_cortado, sr)
 
 
 def obter_duracao_audio(ficheiro_entrada: str) -> float:
@@ -65,11 +58,8 @@ def obter_duracao_audio(ficheiro_entrada: str) -> float:
 
 
 if __name__ == "__main__":
-    # Smoke test manual
-    ok = cortar_audio(
-        "solo_blues_finalizado_2cac6c_1.mp3",
-        "solo_blues_corte.wav",
-        inicio_segundos=10,
-        fim_segundos=40,
-    )
-    print("OK" if ok else "FALHOU")
+    try:
+        cortar_audio("solo_blues_finalizado_2cac6c_1.mp3", "solo_blues_corte.wav", 10, 40)
+        print("OK")
+    except RuntimeError as e:
+        print(f"FALHOU: {e}")

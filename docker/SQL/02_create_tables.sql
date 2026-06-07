@@ -91,15 +91,20 @@ CREATE TABLE generations (
     duration INTEGER,  -- segundos
     tempo_override INTEGER,
 
-    -- Status and results
+    -- Status e resultados
     -- *_storage_key guarda a chave R2/S3 do ficheiro (não o URL presigned).
     status VARCHAR(20) DEFAULT 'pending',  -- pending, processing, completed, failed
     audio_storage_key VARCHAR(512),
     midi_storage_key VARCHAR(512),
     partitura_storage_key VARCHAR(512),
     tablatura_storage_key VARCHAR(512),
-    error_message TEXT,
 
+    -- Estado assíncrono de notação gerada em background
+    -- Valores: null | 'pending' | 'processing' | 'completed' | 'failed'
+    partitura_status VARCHAR(32) DEFAULT NULL,
+    tablatura_status VARCHAR(32) DEFAULT NULL,
+
+    error_message TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP
 );

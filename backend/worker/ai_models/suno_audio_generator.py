@@ -1,14 +1,10 @@
-import os
-from pathlib import Path
-
 import requests
-from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+from app.core.config import settings
 
-API_KEY = os.getenv("SUNO_API_KEY")
+API_KEY = settings.SUNO_API_KEY
 BASE_URL = "https://api.sunoapi.org"
-CALLBACK_URL = os.getenv("SUNO_CALLBACK_URL", "")
+CALLBACK_URL = settings.SUNO_CALLBACK_URL
 
 headers = {"Content-Type": "application/json"}
 

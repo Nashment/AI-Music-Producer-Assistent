@@ -2,18 +2,17 @@
 Generation endpoints - Music generation from AI
 """
 
-import os
 import uuid
 from pathlib import Path
-from typing import Callable
-
 from fastapi import APIRouter, status, Depends
-from fastapi.responses import FileResponse, JSONResponse, Response, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.api.dependencies import get_db, get_current_user_id
-from app.domain.result import Sucesso, Falha
+from app.api.responses import problem_json, handle_result
+from app.domain.result import Falha
 from app.domain.errors.generation_errors import (
     AudioNaoEncontrado,
     GeracaoNaoEncontrada,
@@ -38,68 +37,47 @@ from app.domain.dtos.endpoints.generation import (
 
 router = APIRouter()
 
-_DEFAULT_GENERATIONS_ROOT = Path(__file__).resolve().parents[3] / "worker" / "generations"
-AUDIO_OUTPUT_DIR     = Path(os.getenv("GENERATIONS_AUDIO_DIR",     str(_DEFAULT_GENERATIONS_ROOT / "audio")))
-PARTITURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_PARTITURA_DIR", str(_DEFAULT_GENERATIONS_ROOT / "partitura")))
-TABLATURA_OUTPUT_DIR = Path(os.getenv("GENERATIONS_TABLATURA_DIR", str(_DEFAULT_GENERATIONS_ROOT / "tablatura")))
+AUDIO_OUTPUT_DIR     = Path(settings.GENERATIONS_AUDIO_DIR)
+PARTITURA_OUTPUT_DIR = Path(settings.GENERATIONS_PARTITURA_DIR)
+TABLATURA_OUTPUT_DIR = Path(settings.GENERATIONS_TABLATURA_DIR)
 
 AUDIO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _problem_json(status_code: int, type_slug: str, title: str, detail: str, instance: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "type":     f"/errors/{type_slug}",
-            "title":    title,
-            "status":   status_code,
-            "detail":   detail,
-            "instance": instance,
-        },
-        media_type="application/problem+json",
-    )
-
 
 def _handle_generation_error(erro: GeneracaoErro, instance: str) -> JSONResponse:
     match erro:
         case AudioNaoEncontrado():
-            return _problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
+            return problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
                 "O audio referenciado nao foi encontrado.", instance)
         case GeracaoNaoEncontrada():
-            return _problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
+            return problem_json(404, "recurso-nao-encontrado", "Recurso Nao Encontrado",
                 "A geracao pedida nao foi encontrada.", instance)
         case CoverUrlInvalido():
-            return _problem_json(400, "requisicao-invalida", "Requisicao Invalida",
+            return problem_json(400, "requisicao-invalida", "Requisicao Invalida",
                 "O campo upload_url deve ser uma URL publica (http/https).", instance)
         case PesoAudioInvalido(valor=v):
-            return _problem_json(400, "requisicao-invalida", "Requisicao Invalida",
+            return problem_json(400, "requisicao-invalida", "Requisicao Invalida",
                 f"audio_weight com valor '{v}' invalido. Deve estar entre 0.0 e 1.0.", instance)
         case WorkerIndisponivel():
-            return _problem_json(501, "servico-indisponivel", "Funcionalidade Nao Disponivel",
+            return problem_json(501, "servico-indisponivel", "Funcionalidade Nao Disponivel",
                 "O servico de geracao de musica nao esta disponivel neste ambiente.", instance)
         case FilaIndisponivel():
-            return _problem_json(503, "servico-temporariamente-indisponivel", "Servico Temporariamente Indisponivel",
+            return problem_json(503, "servico-temporariamente-indisponivel", "Servico Temporariamente Indisponivel",
                 "Nao foi possivel enfileirar a geracao. Tente novamente em alguns instantes.", instance)
         case FalhaProcessamentoAudio():
-            return _problem_json(422, "erro-processamento-audio", "Erro de Processamento de Audio",
+            return problem_json(422, "erro-processamento-audio", "Erro de Processamento de Audio",
                 "Nao foi possivel processar o audio. Verifique se o ficheiro e valido.", instance)
         case IntervaloCorteInvalido(detalhe=d):
-            return _problem_json(400, "intervalo-invalido", "Intervalo de Corte Invalido", d, instance)
+            return problem_json(400, "intervalo-invalido", "Intervalo de Corte Invalido", d, instance)
         case FicheiroGeracaoIndisponivel(detalhe=d):
-            return _problem_json(409, "ficheiro-indisponivel", "Ficheiro Indisponivel", d, instance)
+            return problem_json(409, "ficheiro-indisponivel", "Ficheiro Indisponivel", d, instance)
         case _:
-            return _problem_json(500, "erro-interno", "Erro Interno do Servidor",
+            return problem_json(500, "erro-interno", "Erro Interno do Servidor",
                 "Ocorreu um erro inesperado no servico de geracao.", instance)
 
-
-def _handle_result(resultado, instance: str, success_factory: Callable) -> Response:
-    match resultado:
-        case Falha(erro=erro):
-            return _handle_generation_error(erro, instance)
-        case Sucesso(valor=valor):
-            return success_factory(valor)
 
 
 @router.post("/tablature/{audio_id}")
@@ -113,10 +91,7 @@ async def generate_tablature_from_audio(
         user_id=str(user_id),
         tablatura_dir=str(TABLATURA_OUTPUT_DIR),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/tablature/{audio_id}",
-        success_factory=lambda pdf_path: FileResponse(
+    return handle_result(resultado, instance=f"/api/v1/generation/tablature/{audio_id}", on_error=_handle_generation_error, success_factory=lambda pdf_path: FileResponse(
             path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
             background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
@@ -134,10 +109,7 @@ async def generate_partitura_from_audio(
         user_id=str(user_id),
         partitura_dir=str(PARTITURA_OUTPUT_DIR),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/partitura/{audio_id}",
-        success_factory=lambda pdf_path: FileResponse(
+    return handle_result(resultado, instance=f"/api/v1/generation/partitura/{audio_id}", on_error=_handle_generation_error, success_factory=lambda pdf_path: FileResponse(
             path=pdf_path, media_type="application/pdf", filename=Path(pdf_path).name,
             background=BackgroundTask(lambda p=pdf_path: Path(p).unlink(missing_ok=True)),
         ),
@@ -160,13 +132,7 @@ async def generate_music(
         duration=request.duration,
         tempo_override=request.tempo_override,
     )
-    return _handle_result(
-        resultado,
-        instance="/api/v1/generation",
-        success_factory=lambda v: JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED,
-            content=GenerationResponse.model_validate(v[0]).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance="/api/v1/generation", on_error=_handle_generation_error, success_factory=lambda v: v[0],
     )
 
 
@@ -188,13 +154,7 @@ async def generate_cover(
         upload_url=request.upload_url,
         audio_weight=request.audio_weight,
     )
-    return _handle_result(
-        resultado,
-        instance="/api/v1/generation/cover",
-        success_factory=lambda v: JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED,
-            content=GenerationResponse.model_validate(v[0]).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance="/api/v1/generation/cover", on_error=_handle_generation_error, success_factory=lambda v: v[0],
     )
 
 
@@ -205,13 +165,7 @@ async def get_generation_status(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).get_generation(generation_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/status",
-        success_factory=lambda gen: JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/status", on_error=_handle_generation_error, success_factory=lambda gen: gen,
     )
 
 
@@ -222,13 +176,7 @@ async def get_generation_result(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).get_generation(generation_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}",
-        success_factory=lambda gen: JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}", on_error=_handle_generation_error, success_factory=lambda gen: gen,
     )
 
 
@@ -239,10 +187,7 @@ async def delete_generation(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).delete_generation(generation_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}",
-        success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}", on_error=_handle_generation_error, success_factory=lambda _: Response(status_code=status.HTTP_204_NO_CONTENT),
     )
 
 
@@ -253,10 +198,7 @@ async def list_generations_by_audio(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).list_generations_for_audio(audio_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/by-audio/{audio_id}",
-        success_factory=lambda gens: GenerationListResponse(
+    return handle_result(resultado, instance=f"/api/v1/generation/by-audio/{audio_id}", on_error=_handle_generation_error, success_factory=lambda gens: GenerationListResponse(
             generations=[GenerationResult.model_validate(g) for g in gens],
         ),
     )
@@ -269,10 +211,7 @@ async def list_cuts_of_generation(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).list_cuts_for_generation(generation_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/cuts",
-        success_factory=lambda cuts: GenerationListResponse(
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/cuts", on_error=_handle_generation_error, success_factory=lambda cuts: GenerationListResponse(
             generations=[GenerationResult.model_validate(c) for c in cuts],
         ),
     )
@@ -289,10 +228,7 @@ async def get_generation_audio(
     evitando o conflito de autenticacao dupla que o R2 rejeita.
     """
     resultado = await GenerationService(db).get_generation_audio_url(generation_id, str(user_id))
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/audio",
-        success_factory=lambda url: JSONResponse(content={"url": url}),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/audio", on_error=_handle_generation_error, success_factory=lambda url: JSONResponse(content={"url": url}),
     )
 
 
@@ -310,13 +246,7 @@ async def cut_generation_endpoint(
         fim_segundos=request.fim_segundos,
         output_dir=str(AUDIO_OUTPUT_DIR),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/cut",
-        success_factory=lambda cut: JSONResponse(
-            status_code=status.HTTP_201_CREATED,
-            content=GenerationResult.model_validate(cut).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/cut", on_error=_handle_generation_error, success_factory=lambda cut: cut,
     )
 
 
@@ -333,13 +263,7 @@ async def request_partitura_from_generation(
         generation_id=generation_id,
         user_id=str(user_id),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/partitura",
-        success_factory=lambda gen: JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED,
-            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/partitura", on_error=_handle_generation_error, success_factory=lambda gen: gen,
     )
 
 
@@ -355,10 +279,7 @@ async def get_partitura_url(
         generation_id=generation_id,
         user_id=str(user_id),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/partitura",
-        success_factory=lambda url: JSONResponse(content={"url": url}),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/partitura", on_error=_handle_generation_error, success_factory=lambda url: JSONResponse(content={"url": url}),
     )
 
 
@@ -374,13 +295,7 @@ async def request_tablature_from_generation(
         generation_id=generation_id,
         user_id=str(user_id),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/tablature",
-        success_factory=lambda gen: JSONResponse(
-            status_code=status.HTTP_202_ACCEPTED,
-            content=GenerationResult.model_validate(gen).model_dump(mode="json"),
-        ),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/tablature", on_error=_handle_generation_error, success_factory=lambda gen: gen,
     )
 
 
@@ -396,8 +311,5 @@ async def get_tablature_url(
         generation_id=generation_id,
         user_id=str(user_id),
     )
-    return _handle_result(
-        resultado,
-        instance=f"/api/v1/generation/{generation_id}/tablature",
-        success_factory=lambda url: JSONResponse(content={"url": url}),
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}/tablature", on_error=_handle_generation_error, success_factory=lambda url: JSONResponse(content={"url": url}),
     )
