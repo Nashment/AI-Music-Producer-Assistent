@@ -112,11 +112,6 @@ class Settings:
     # ------------------------------------------------------------------
     # Paths de executáveis externos (com defaults por OS)
     # ------------------------------------------------------------------
-    MIDI2LY_PATH: str = os.getenv(
-        "MIDI2LY_PATH",
-        r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\midi2ly.py" if os.name == "nt"
-        else "/usr/bin/midi2ly"
-    )
     LILYPOND_PATH: str = os.getenv(
         "LILYPOND_PATH",
         r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\lilypond.exe" if os.name == "nt"

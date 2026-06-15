@@ -26,5 +26,8 @@ demucs==4.0.1
 mido==1.3.0
 pretty_midi==0.2.11
 
+# Notacao (quantizacao, MusicXML, armaduras)
+music21==8.1.0
+
 # MIDI extraction from audio (requer torch/tensorflow internamente)
 basic-pitch==0.4.0

@@ -4,7 +4,7 @@ import asyncio
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from celery.utils.log import get_task_logger
 
@@ -36,21 +36,17 @@ except ImportError as e:
 try:
     from worker.audio_utils.audio_extractor import extrair_midi_do_audio
     from worker.audio_utils.audio_to_tablature2 import (
-        extrair_lista_notas,
+        extrair_eventos,
         otimizar_tablatura,
-        converter_midi_para_ly,
-        injetar_inteligencia_no_ly,
-        forcar_tablatura_no_ly,
+        gerar_ly_tablatura,
         compilar_pdf_lilypond,
     )
 except ImportError as e:
     print(f"Warning: Could not import tablature modules: {e}")
     extrair_midi_do_audio = None
-    extrair_lista_notas = None
+    extrair_eventos = None
     otimizar_tablatura = None
-    converter_midi_para_ly = None
-    injetar_inteligencia_no_ly = None
-    forcar_tablatura_no_ly = None
+    gerar_ly_tablatura = None
     compilar_pdf_lilypond = None
 
 try:
@@ -72,10 +68,11 @@ except ImportError as e:
     ajustar_bpm_automatico = None
 
 try:
-    from worker.audio_utils.transposicao import transpor_musica
+    from worker.audio_utils.transposicao import transpor_musica, calcular_semitons_entre_tons
 except ImportError as e:
     print(f"Warning: Could not import transposicao: {e}")
     transpor_musica = None
+    calcular_semitons_entre_tons = None
 
 try:
     from worker.audio_utils.separador_faixas import extrair_instrumento
@@ -83,13 +80,14 @@ except ImportError as e:
     print(f"Warning: Could not import separador_faixas: {e}")
     extrair_instrumento = None
 
+from worker.ai_models.suno_helpers import (
+    build_suno_prompt,
+    extract_suno_audio_url,
+    extract_suno_task_status,
+)
+
 logger = get_task_logger(__name__)
 
-_NOTAS_CROMATICAS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-_BEMOIS_PARA_SUSTENIDOS = {
-    "Db": "C#", "Eb": "D#", "Fb": "E", "Gb": "F#",
-    "Ab": "G#", "Bb": "A#", "Cb": "B",
-}
 LIMIAR_BPM = 5
 
 AUDIO_OUTPUT_DIR     = Path(settings.GENERATIONS_AUDIO_DIR)
@@ -127,7 +125,7 @@ def process_cover_generation_task(self, generation_id: str, upload_url: str, aud
 # Notacao (tablatura / partitura) — correm no worker com basic_pitch
 # ------------------------------------------------------------------
 
-@celery_app.task(bind=True, time_limit=180)
+@celery_app.task(bind=True, time_limit=600)
 def generate_tablature_task(self, generation_id: str) -> dict:
     """Gera tablatura PDF no worker (basic_pitch + lilypond). Devolve {"r2_key": "..."}."""
     loop = asyncio.new_event_loop()
@@ -135,7 +133,7 @@ def generate_tablature_task(self, generation_id: str) -> dict:
     return loop.run_until_complete(_generate_tablature_for_generation_async(generation_id))
 
 
-@celery_app.task(bind=True, time_limit=180)
+@celery_app.task(bind=True, time_limit=600)
 def generate_partitura_task(self, generation_id: str) -> dict:
     """Gera partitura PDF no worker (basic_pitch). Devolve {"r2_key": "..."}."""
     loop = asyncio.new_event_loop()
@@ -175,28 +173,18 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
 
                 midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
 
-                ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-                if not ok_ly:
-                    raise RuntimeError("Falha na conversao MIDI->LY.")
+                eventos = extrair_eventos(midi_data) if midi_data else []
+                ded     = otimizar_tablatura([p for _, _, p in eventos]) if eventos else None
 
-                notas = extrair_lista_notas(midi_data) if midi_data else []
-                ded   = otimizar_tablatura(notas) if notas else None
-                if ded:
-                    await asyncio.to_thread(injetar_inteligencia_no_ly, str(ly_path), ded)
-                else:
-                    await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-
-                ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-                ly_pdf = ly_path.with_suffix(".pdf")
-
-                if not ok_pdf:
-                    # fallback sem dedilhado
+                await asyncio.to_thread(gerar_ly_tablatura, midi_data, ded, str(ly_path))
+                try:
+                    await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+                except RuntimeError:
+                    # fallback: sem dedilhado otimizado (LilyPond escolhe as cordas)
                     ly_path.unlink(missing_ok=True)
-                    ok_ly2 = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-                    if ok_ly2:
-                        await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-                        ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-                        ly_pdf = ly_path.with_suffix(".pdf")
+                    await asyncio.to_thread(gerar_ly_tablatura, midi_data, None, str(ly_path))
+                    await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+                ly_pdf = ly_path.with_suffix(".pdf")
 
                 if ly_pdf.exists():
                     ly_pdf.replace(pdf_final)
@@ -300,7 +288,7 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
         await engine.dispose()
 
 
-@celery_app.task(bind=True, time_limit=180)
+@celery_app.task(bind=True, time_limit=600)
 def generate_tablature_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
     """Gera tablatura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
     loop = asyncio.new_event_loop()
@@ -308,7 +296,7 @@ def generate_tablature_from_audio_key_task(self, audio_storage_key: str, prefix:
     return loop.run_until_complete(_generate_tablature_from_key_async(audio_storage_key, prefix))
 
 
-@celery_app.task(bind=True, time_limit=180)
+@celery_app.task(bind=True, time_limit=600)
 def generate_partitura_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
     """Gera partitura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
     loop = asyncio.new_event_loop()
@@ -326,28 +314,17 @@ async def _generate_tablature_from_key_async(audio_storage_key: str, prefix: str
         try:
             if not extrair_midi_do_audio:
                 raise RuntimeError("basic_pitch nao disponivel no worker.")
-            midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-            midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
-            if not midi_ok:
-                raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
-            ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-            if not ok_ly:
-                raise RuntimeError("Falha na conversao MIDI->LY.")
-            notas = extrair_lista_notas(midi_data) if midi_data else []
-            ded   = otimizar_tablatura(notas) if notas else None
-            if ded:
-                await asyncio.to_thread(injetar_inteligencia_no_ly, str(ly_path), ded)
-            else:
-                await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-            ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-            ly_pdf = ly_path.with_suffix(".pdf")
-            if not ok_pdf:
+            midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+            eventos = extrair_eventos(midi_data) if midi_data else []
+            ded     = otimizar_tablatura([p for _, _, p in eventos]) if eventos else None
+            await asyncio.to_thread(gerar_ly_tablatura, midi_data, ded, str(ly_path))
+            try:
+                await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+            except RuntimeError:
                 ly_path.unlink(missing_ok=True)
-                ok_ly2 = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-                if ok_ly2:
-                    await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-                    ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-                    ly_pdf = ly_path.with_suffix(".pdf")
+                await asyncio.to_thread(gerar_ly_tablatura, midi_data, None, str(ly_path))
+                await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+            ly_pdf = ly_path.with_suffix(".pdf")
             if ly_pdf.exists():
                 ly_pdf.replace(pdf_final)
             if not pdf_final.exists():
@@ -373,10 +350,7 @@ async def _generate_partitura_from_key_async(audio_storage_key: str, prefix: str
                 raise RuntimeError("basic_pitch nao disponivel no worker.")
             if not exportar_pdf_automatico:
                 raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
-            midi_result = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-            midi_ok, midi_data, midi_error = _normalize_midi_extract_result(midi_result)
-            if not midi_ok:
-                raise RuntimeError(f"Falha na extracao MIDI: {midi_error or 'desconhecido'}")
+            await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
             await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
             if not pdf_final.exists():
                 raise RuntimeError("PDF de partitura nao foi criado.")
@@ -414,7 +388,7 @@ async def _process_generation_async(generation_id: str):
             status=GenerationStatusEnum.PROCESSING,
         )
 
-        style_prompt = _build_suno_prompt(
+        style_prompt = build_suno_prompt(
             prompt=generation.prompt,
             instrument=generation.instrument,
             genre=generation.genre,
@@ -506,7 +480,7 @@ async def _process_cover_generation_async(generation_id: str, upload_url: str, a
             status=GenerationStatusEnum.PROCESSING,
         )
 
-        style_prompt = _build_suno_prompt(
+        style_prompt = build_suno_prompt(
             prompt=generation.prompt,
             instrument=generation.instrument,
             genre=generation.genre,
@@ -605,12 +579,12 @@ async def _poll_and_finalize(db, generation_id: str, suno_task_id: str):
             )
             continue
 
-        status_value = _extract_suno_task_status(dados)
+        status_value = extract_suno_task_status(dados)
         if status_value in {"failed", "error", "cancelled", "canceled",
                             "create_task_failed", "generate_audio_failed"}:
             raise RuntimeError(f"Suno task terminou com estado: {status_value}")
 
-        audio_url = _extract_suno_audio_url(dados)
+        audio_url = extract_suno_audio_url(dados)
         if not audio_url:
             logger.info(
                 "Suno poll %s/%s for generation_id=%s suno_task_id=%s still processing (status=%s)",
@@ -634,36 +608,6 @@ async def _poll_and_finalize(db, generation_id: str, suno_task_id: str):
         }
 
     raise RuntimeError("Tempo limite de geracao excedido (10 minutos).")
-
-
-def _walk_json_values(node: Any):
-    if isinstance(node, dict):
-        yield node
-        for value in node.values():
-            yield from _walk_json_values(value)
-    elif isinstance(node, list):
-        for item in node:
-            yield from _walk_json_values(item)
-
-
-def _extract_suno_audio_url(payload: dict) -> Optional[str]:
-    keys = {
-        "audio_url", "audioUrl", "stream_audio_url", "streamAudioUrl",
-        "source_audio_url", "sourceAudioUrl", "audio",
-    }
-    for node in _walk_json_values(payload):
-        for key in keys:
-            value = node.get(key)
-            if isinstance(value, str) and value.strip().startswith(("http://", "https://")):
-                return value.strip()
-    return None
-
-
-def _extract_suno_task_status(payload: dict) -> Optional[str]:
-    try:
-        return payload["data"]["status"].strip().lower()
-    except (KeyError, AttributeError):
-        return None
 
 
 async def _generate_notation_files(generation_id: str, audio_path: Path):
@@ -692,37 +636,26 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
             except RuntimeError:
                 pass  # partitura opcional — continua para tablatura
 
-        if all([converter_midi_para_ly, injetar_inteligencia_no_ly, forcar_tablatura_no_ly,
-                compilar_pdf_lilypond, extrair_lista_notas, otimizar_tablatura]):
+        if all([gerar_ly_tablatura, compilar_pdf_lilypond, extrair_eventos,
+                otimizar_tablatura]) and midi_data:
             ly_path = TABLATURA_OUTPUT_DIR / f"{generation_id}.ly"
-            ok_ly = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-            if ok_ly:
-                if midi_data:
-                    notas_midi = extrair_lista_notas(midi_data)
-                    dedilhado = otimizar_tablatura(notas_midi)
-                    if dedilhado:
-                        await asyncio.to_thread(injetar_inteligencia_no_ly, str(ly_path), dedilhado)
-                    else:
-                        await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-                else:
-                    await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
+            eventos = extrair_eventos(midi_data)
+            dedilhado = otimizar_tablatura([p for _, _, p in eventos]) if eventos else None
 
-                ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-                t_pdf = ly_path.with_suffix(".pdf")
+            await asyncio.to_thread(gerar_ly_tablatura, midi_data, dedilhado, str(ly_path))
+            try:
+                await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
+            except RuntimeError:
+                # fallback: sem dedilhado otimizado (LilyPond escolhe as cordas)
+                ly_path.unlink(missing_ok=True)
+                await asyncio.to_thread(gerar_ly_tablatura, midi_data, None, str(ly_path))
+                await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
 
-                if not ok_pdf:
-                    if ly_path.exists():
-                        ly_path.unlink(missing_ok=True)
-                    ok_ly_fallback = await asyncio.to_thread(converter_midi_para_ly, str(midi_path), str(ly_path))
-                    if ok_ly_fallback:
-                        await asyncio.to_thread(forcar_tablatura_no_ly, str(ly_path))
-                        ok_pdf = await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
-                        t_pdf = ly_path.with_suffix(".pdf")
-
-                if ok_pdf and t_pdf.exists():
-                    final_t_pdf = TABLATURA_OUTPUT_DIR / f"{generation_id}_tablatura.pdf"
-                    t_pdf.replace(final_t_pdf)
-                    tablatura_path = str(final_t_pdf)
+            t_pdf = ly_path.with_suffix(".pdf")
+            if t_pdf.exists():
+                final_t_pdf = TABLATURA_OUTPUT_DIR / f"{generation_id}_tablatura.pdf"
+                t_pdf.replace(final_t_pdf)
+                tablatura_path = str(final_t_pdf)
 
     except Exception as e:
         logger.warning("Non-critical notation generation error for %s: %s", generation_id, e)
@@ -733,25 +666,6 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
             ly_path.unlink(missing_ok=True)
 
     return partitura_path, tablatura_path
-
-
-def _extrair_nota_raiz(tom: str) -> Optional[str]:
-    if not tom:
-        return None
-    nota = tom.strip().split()[0]
-    nota = _BEMOIS_PARA_SUSTENIDOS.get(nota, nota)
-    return nota if nota in _NOTAS_CROMATICAS else None
-
-
-def _calcular_semitons_entre_tons(tom_original: str, tom_gerado: str) -> int:
-    nota_orig = _extrair_nota_raiz(tom_original)
-    nota_ger  = _extrair_nota_raiz(tom_gerado)
-    if not nota_orig or not nota_ger:
-        return 0
-    diff = (_NOTAS_CROMATICAS.index(nota_orig) - _NOTAS_CROMATICAS.index(nota_ger)) % 12
-    if diff > 6:
-        diff -= 12
-    return diff
 
 
 async def _ajustar_audio_gerado_async(
@@ -772,7 +686,7 @@ async def _ajustar_audio_gerado_async(
         "erros": [],
     }
 
-    if not all([analisar_audio_completo, ajustar_bpm_automatico, transpor_musica]):
+    if not all([analisar_audio_completo, ajustar_bpm_automatico, transpor_musica, calcular_semitons_entre_tons]):
         logger.warning("[pos-proc] Modulos de analise/ajuste indisponiveis para generation %s.", generation_id)
         return audio_path_gerado, resumo
 
@@ -808,7 +722,7 @@ async def _ajustar_audio_gerado_async(
                 resumo["erros"].append(f"ajuste_bpm: {exc}")
 
     if tom_original and tom_gerado:
-        semitons = _calcular_semitons_entre_tons(tom_original, tom_gerado)
+        semitons = calcular_semitons_entre_tons(tom_original, tom_gerado)
         if semitons != 0:
             caminho_trans = audio_path_gerado.parent / f"{generation_id}_trans.wav"
             try:
@@ -851,32 +765,3 @@ async def _ajustar_audio_gerado_async(
             pass
 
     return caminho_atual, resumo
-
-
-def _build_suno_prompt(prompt: str, instrument: str, genre: Optional[str], audio, tempo_override: Optional[int]) -> str:
-    """Constroi o campo  para a API Suno.
-
-    Ordem de prioridade:
-      instrumento + genero (identidade sonora) -> contexto musical (BPM, tom) ->
-      descricao do utilizador (contexto criativo).
-    """
-    bpm = tempo_override or getattr(audio, "bpm", None)
-    key = getattr(audio, "key", None)
-    time_sig = getattr(audio, "time_signature", None)
-
-    parts = [f"{instrument} solo"]
-    if genre:
-        parts.append(genre)
-    if bpm:
-        parts.append(f"{bpm} BPM")
-    if key:
-        parts.append(f"Key of {key}")
-    if time_sig:
-        parts.append(f"{time_sig} time signature")
-    parts.append("professional quality")
-    if prompt:
-        parts.append(prompt)
-
-    return ", ".join(parts)
-
-

@@ -15,7 +15,7 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="Europe/Lisbon",  # também podes aproveitar e corrigir o timezone
+    timezone="Europe/Lisbon",
     enable_utc=True,
     task_track_started=True,
     task_time_limit=30 * 60,
