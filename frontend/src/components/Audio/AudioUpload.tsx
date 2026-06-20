@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import useLanguage from '../../hooks/language/useLanguage';
+import Spinner from '../Layout/Spinner';
 
 interface Props {
     onUpload: (file: File) => Promise<unknown>;
@@ -75,7 +76,13 @@ export function AudioUpload({ onUpload, uploading }: Props) {
                     }}
                 />
                 <div className="audio-upload-content">
-                    <span className="audio-upload-icon">🎧</span>
+                    {uploading ? (
+                        <span className="audio-upload-icon audio-upload-spinner">
+                            <Spinner size="lg" />
+                        </span>
+                    ) : (
+                        <span className="audio-upload-icon">🎧</span>
+                    )}
                     <span className="audio-upload-title">
                         {uploading ? t.audioUpload.busy : t.audioUpload.idle}
                     </span>

@@ -14,6 +14,7 @@ import {
  *   POST   /audio/project/{projectId}/upload       -> upload + analise (multipart)
  *   GET    /audio/analysis/{audioId}               -> metadados da analise
  *   GET    /audio/{audioId}                         -> stream/download do ficheiro
+ *   PATCH  /audio/{audioId}                         -> renomeia (nome amigavel)
  *   DELETE /audio/{audioId}                         -> apaga
  *   POST   /audio/{audioId}/adjust-bpm?target_bpm=  -> ajusta BPM
  *   POST   /audio/{audioId}/cut?...                 -> corta intervalo
@@ -58,6 +59,18 @@ export const audioService = {
         if (!audioRes.ok) throw new Error('Falha a obter ficheiro de audio.');
         const blob = await audioRes.blob();
         return URL.createObjectURL(blob);
+    },
+
+    /** Renomeia um audio (nome amigavel). String vazia limpa o nome. */
+    async renameAudio(
+        audioId: string,
+        displayName: string,
+    ): Promise<AudioAnalysisResponse> {
+        const res = await request(`/audio/${audioId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ display_name: displayName }),
+        });
+        return res.json();
     },
 
     async deleteAudio(audioId: string): Promise<void> {

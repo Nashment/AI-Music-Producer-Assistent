@@ -15,14 +15,14 @@ import {
     ProjectUpdate,
 } from '../services/project/projectResponseTypes';
 
-type SortKey = 'name' | 'tempo';
+type SortKey = 'name-asc' | 'name-desc';
 
 /**
  * /projects — lista, pesquisa, ordenacao + criacao via modal.
  * Eliminacao com confirmacao.
  */
 function ProjectsPage() {
-    const { projects, loading, error, createProject, deleteProject } = useProjects();
+    const { projects, loading, error, createProject, updateProject, deleteProject } = useProjects();
     const { t } = useLanguage();
     const toast = useToast();
 
@@ -33,7 +33,7 @@ function ProjectsPage() {
     const [deleting, setDeleting] = useState(false);
 
     const [search, setSearch] = useState('');
-    const [sort, setSort] = useState<SortKey>('name');
+    const [sort, setSort] = useState<SortKey>('name-asc');
 
     const visible = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -44,11 +44,10 @@ function ProjectsPage() {
                       p.description.toLowerCase().includes(q),
               )
             : projects;
-        const sorted = [...filtered].sort((a, b) =>
-            sort === 'name'
-                ? a.title.localeCompare(b.title)
-                : a.tempo - b.tempo,
-        );
+        const sorted = [...filtered].sort((a, b) => {
+            const cmp = a.title.localeCompare(b.title);
+            return sort === 'name-desc' ? -cmp : cmp;
+        });
         return sorted;
     }, [projects, search, sort]);
 
@@ -63,6 +62,16 @@ function ProjectsPage() {
             throw err;
         } finally {
             setCreating(false);
+        }
+    };
+
+    const handleRename = async (id: string, name: string) => {
+        try {
+            await updateProject(id, { title: name });
+            toast.success(t.rename.saved);
+        } catch (err) {
+            toast.error(describeError(err, t.rename.error));
+            throw err;
         }
     };
 
@@ -104,8 +113,8 @@ function ProjectsPage() {
                     onChange={e => setSort(e.target.value as SortKey)}
                     aria-label={t.projects.sortLabel}
                 >
-                    <option value="name">{t.projects.sortName}</option>
-                    <option value="tempo">{t.projects.sortTempo}</option>
+                    <option value="name-asc">{t.projects.sortNameAsc}</option>
+                    <option value="name-desc">{t.projects.sortNameDesc}</option>
                 </select>
             </div>
 
@@ -139,6 +148,7 @@ function ProjectsPage() {
             {visible.length > 0 ? (
                 <ProjectList
                     projects={visible}
+                    onRename={handleRename}
                     onDelete={id => {
                         const p = projects.find(x => x.id === id) ?? null;
                         setConfirmDel(p);

@@ -88,9 +88,6 @@ function ProfilePage() {
                             onChange={e => setUsername(e.target.value)}
                             placeholder={t.profile.usernamePlaceholder}
                         />
-                        <span className="field-hint">
-                            {t.profile.internalId} <span className="text-mono">{user.id}</span>
-                        </span>
                     </div>
 
                     <div className="profile-form-actions">

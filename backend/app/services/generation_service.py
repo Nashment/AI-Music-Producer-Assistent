@@ -141,6 +141,20 @@ class GenerationService:
             return Falha(GeracaoNaoEncontrada(generation_id=generation_id))
         return Sucesso(gen)
 
+    async def rename_generation(
+        self, generation_id: str, user_id: str, name: str
+    ) -> Resultado:
+        """Define um nome amigavel para uma geracao/corte. String vazia limpa
+        o nome (volta a mostrar o rotulo derivado do prompt)."""
+        resultado = await self.get_generation(generation_id, user_id)
+        if isinstance(resultado, Falha):
+            return resultado
+        clean = (name or "").strip()
+        updated = await GenerationQueries.rename_generation(
+            db=self.db, generation_id=generation_id, name=clean or None
+        )
+        return Sucesso(updated)
+
     async def delete_generation(self, generation_id: str, user_id: str) -> Resultado:
         resultado = await self.get_generation(generation_id, user_id)
         if isinstance(resultado, Falha):

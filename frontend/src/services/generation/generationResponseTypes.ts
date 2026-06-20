@@ -37,6 +37,7 @@ export type GenerationResponse = {
 export type GenerationResult = {
     id: string;
     status: GenerationStatus;
+    name?: string | null;  // nome amigavel definido pelo utilizador
     project_id?: string | null;
     audio_file_id?: string | null;
     parent_generation_id?: string | null;

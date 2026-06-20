@@ -56,6 +56,7 @@ export function GenerateMusicPanel({ projectId, audioId, submitting, onSubmit }:
                         rows={4}
                         placeholder={t.generatePanel.promptPlaceholder}
                     />
+                    <span className="field-hint">{t.generatePanel.promptHint}</span>
                 </div>
 
                 <div className="field">

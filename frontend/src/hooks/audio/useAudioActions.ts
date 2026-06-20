@@ -62,6 +62,20 @@ export function useAudioActions(dispatch: React.Dispatch<AudioAction>) {
         [dispatch],
     );
 
+    const renameAudio = useCallback(
+        async (audioId: string, displayName: string) => {
+            try {
+                const data = await audioService.renameAudio(audioId, displayName);
+                dispatch({ type: 'AUDIO_UPDATED', payload: data });
+                return data;
+            } catch (e: any) {
+                dispatch({ type: 'SET_ERROR', payload: e?.detail ?? 'Erro a renomear audio.' });
+                throw e;
+            }
+        },
+        [dispatch],
+    );
+
     const adjustBpm = useCallback(
         async (audioId: string, targetBpm: number) => {
             try {
@@ -107,6 +121,7 @@ export function useAudioActions(dispatch: React.Dispatch<AudioAction>) {
         loadAudio,
         uploadAudio,
         deleteAudio,
+        renameAudio,
         adjustBpm,
         cutAudio,
         separateTracks,

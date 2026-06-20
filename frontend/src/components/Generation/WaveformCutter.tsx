@@ -164,6 +164,17 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [generation.id]);
 
+    const handleDownload = () => {
+        const url = blobUrlRef.current;
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `geracao_${generation.id.slice(0, 8)}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
     const togglePlay = () => {
         const ws = wsRef.current;
         if (!ws) return;
@@ -222,6 +233,13 @@ export function WaveformCutter({ generation, cutting, onCut }: Props) {
                     <div className="waveform-controls">
                         <button type="button" className="btn btn-secondary" onClick={togglePlay}>
                             {playing ? t.waveform.pause : t.waveform.play}
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleDownload}
+                        >
+                            {t.waveform.download}
                         </button>
                         <span className="text-muted text-sm">
                             {t.waveform.totalDuration} {fmtTime(duration)} · {t.waveform.currentWindow}{' '}

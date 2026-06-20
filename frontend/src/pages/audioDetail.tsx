@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { audioService } from '../services/audio/audioService';
+import { generationService } from '../services/generation/generationService';
 import { AudioAnalysisResponse } from '../services/audio/audioResponseTypes';
 import { GenerationResult, isCut } from '../services/generation/generationResponseTypes';
 import useAudioGenerations from '../hooks/generation/useAudioGenerations';
@@ -14,10 +15,9 @@ import PageHeader from '../components/Layout/PageHeader';
 import Spinner from '../components/Layout/Spinner';
 import ConfirmDialog from '../components/Layout/ConfirmDialog';
 import { useToast, describeError } from '../components/Layout/Toast';
+import InlineRename from '../components/Layout/InlineRename';
+import { audioDisplayName } from '../utils/common';
 
-function basename(p: string): string {
-    return p.split(/[\\/]/).pop() ?? 'audio';
-}
 function fmtDuration(s: number): string {
     if (!Number.isFinite(s)) return '—';
     const m = Math.floor(s / 60);
@@ -119,6 +119,30 @@ function AudioDetailPage() {
         }
     };
 
+    // ----- handlers: renomear áudio / geração / corte ------------------
+    const handleRenameAudio = async (name: string) => {
+        if (!audioId) return;
+        try {
+            const updated = await audioService.renameAudio(audioId, name);
+            setAudio(updated);
+            toast.success(t.rename.saved);
+        } catch (err) {
+            toast.error(describeError(err, t.rename.error));
+            throw err;
+        }
+    };
+
+    const handleRenameGeneration = async (id: string, name: string) => {
+        try {
+            await generationService.renameGeneration(id, name);
+            await gens.refresh();
+            toast.success(t.rename.saved);
+        } catch (err) {
+            toast.error(describeError(err, t.rename.error));
+            throw err;
+        }
+    };
+
     // ----- handler: eliminar geração/corte ----------------------------
     const handleDeleteRequest = (id: string) => {
         setPendingDeleteId(id);
@@ -146,7 +170,13 @@ function AudioDetailPage() {
     return (
         <div className="audio-detail-v2">
             <PageHeader
-                title={basename(audio.storage_key)}
+                title={
+                    <InlineRename
+                        as="span"
+                        value={audioDisplayName(audio)}
+                        onRename={handleRenameAudio}
+                    />
+                }
                 description={`${fmtDuration(audio.duration)} · ${audio.sample_rate} Hz`}
                 backTo={`/projects/${projectId}`}
                 backLabel={t.audioDetail.back}
@@ -178,7 +208,7 @@ function AudioDetailPage() {
                             <dt>{t.audioDetail.timeSignature}</dt>
                             <dd>{audio.time_signature ?? '—'}</dd>
                         </dl>
-                        <AudioPlayer audioId={audio.id} fileName={basename(audio.storage_key)} />
+                        <AudioPlayer audioId={audio.id} fileName={audioDisplayName(audio)} />
                     </section>
 
                     <section className="card audio-tree-card">
@@ -192,6 +222,7 @@ function AudioDetailPage() {
                             selectedId={selectedId}
                             onSelect={g => setSelectedId(g.id)}
                             onDelete={handleDeleteRequest}
+                            onRename={handleRenameGeneration}
                         />
                         {selectedId ? (
                             <button

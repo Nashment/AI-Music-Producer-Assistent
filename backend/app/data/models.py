@@ -81,6 +81,9 @@ class AudioFile(Base):
 
     # Chave R2 do ficheiro no Cloudflare (ex: "audio/{uuid}_{filename}")
     storage_key = Column(String(512), nullable=False)
+    # Nome amigavel definido pelo utilizador (opcional). Quando nulo, o
+    # frontend mostra o nome original derivado da storage_key.
+    display_name = Column(String(255), nullable=True)
     file_size = Column(Integer)
     duration = Column(Float)
     sample_rate = Column(Integer)
@@ -113,6 +116,10 @@ class Generation(Base):
         ForeignKey("generations.id", ondelete="CASCADE"),
         nullable=True,
     )
+
+    # Nome amigavel definido pelo utilizador (opcional). Quando nulo, o
+    # frontend mostra um rotulo derivado do prompt.
+    name = Column(String(255), nullable=True)
 
     prompt = Column(Text, nullable=False)
     instrument = Column(String(128))

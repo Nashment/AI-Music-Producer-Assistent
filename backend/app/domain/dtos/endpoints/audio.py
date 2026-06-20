@@ -10,6 +10,7 @@ class AudioAnalysisResponse(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
     storage_key: str
+    display_name: Optional[str] = None
     duration: float
     sample_rate: int
     bpm: Optional[int] = None
@@ -19,6 +20,12 @@ class AudioAnalysisResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AudioRename(BaseModel):
+    """Pedido para renomear um audio (nome amigavel)."""
+
+    display_name: str
 
 
 class AudioListResponse(BaseModel):

@@ -5,9 +5,10 @@ interface Props {
     projectId: string;
     audios: AudioAnalysisResponse[];
     onDelete?: (id: string) => void;
+    onRename?: (id: string, name: string) => Promise<unknown>;
 }
 
-export function AudioList({ projectId, audios, onDelete }: Props) {
+export function AudioList({ projectId, audios, onDelete, onRename }: Props) {
     return (
         <div className="audio-list">
             {audios.map(a => (
@@ -16,6 +17,7 @@ export function AudioList({ projectId, audios, onDelete }: Props) {
                     projectId={projectId}
                     audio={a}
                     onDelete={onDelete}
+                    onRename={onRename}
                 />
             ))}
         </div>

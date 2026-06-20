@@ -360,6 +360,61 @@ textarea { resize: vertical; min-height: 80px; }
 .badge-warning { background: var(--warning-soft); color: var(--warning); border-color: rgba(241, 179, 74, 0.3); }
 
 /* ---------------------------------------------------------------------------
+ * Inline rename (lápis + input)
+ * ------------------------------------------------------------------------- */
+.inline-rename {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+}
+.inline-rename-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.inline-rename-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 1.6em;
+    height: 1.6em;
+    padding: 0;
+    font-size: 0.85em;
+    line-height: 1;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.inline-rename-btn:hover {
+    opacity: 1;
+    background: var(--primary-soft);
+    color: var(--primary);
+}
+.inline-rename-cancel:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+.inline-rename-input {
+    min-width: 8rem;
+    max-width: 100%;
+    padding: 0.25em 0.5em;
+    font: inherit;
+    color: var(--text);
+    background: var(--surface, var(--bg));
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: var(--radius-sm, 6px);
+}
+.inline-rename.is-editing { gap: var(--space-1); }
+
+/* ---------------------------------------------------------------------------
  * Spinner
  * ------------------------------------------------------------------------- */
 .spinner {

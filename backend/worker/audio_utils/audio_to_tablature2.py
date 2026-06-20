@@ -51,6 +51,22 @@ _DURACOES_LY = [
 # Posições e custos (algoritmo de otimização)
 # ---------------------------------------------------------------------------
 
+# Alcance tocável da guitarra: da 6ª corda solta (40) ao traste máximo da 1ª (64+22=86).
+_MIN_GUITARRA = min(AFINACAO_GUITARRA.values())
+_MAX_GUITARRA = max(AFINACAO_GUITARRA.values()) + MAX_TRASTES
+
+
+def _no_alcance(pitch):
+    """True se o pitch MIDI é tocável numa guitarra padrão (alcance [40, 86]).
+
+    Numa tablatura, notas fora do alcance da guitarra são artefactos da
+    transcrição (basic_pitch) — devem ser descartadas, não transpostas, para
+    não inventar notas que não existem nem cair no auto-tab do LilyPond (que
+    gera trastes impossíveis como 38).
+    """
+    return _MIN_GUITARRA <= int(pitch) <= _MAX_GUITARRA
+
+
 def obter_posicoes_possiveis(nota_midi):
     posicoes = []
     for corda, base_midi in AFINACAO_GUITARRA.items():
@@ -227,6 +243,9 @@ def extrair_eventos(midi_data, epsilon=_EPSILON_ACORDE):
 
     eventos = []
     for n in notas:
+        # Descartar notas fora do alcance da guitarra (lixo da transcrição).
+        if not _no_alcance(n.pitch):
+            continue
         if eventos and (n.start - eventos[-1][0]) <= epsilon:
             start, end, pitches = eventos[-1]
             if n.pitch not in pitches:

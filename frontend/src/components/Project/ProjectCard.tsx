@@ -1,22 +1,32 @@
 import { Link } from 'react-router-dom';
 import { ProjectResponse } from '../../services/project/projectResponseTypes';
+import InlineRename from '../Layout/InlineRename';
 
 interface Props {
     project: ProjectResponse;
     onDelete?: (id: string) => void;
+    /** Renomeia o projeto (título). Quando omitido, o lápis não aparece. */
+    onRename?: (id: string, name: string) => Promise<unknown>;
 }
 
 /**
  * Cartao de projeto na lista. Liga para /projects/:id.
  */
-export function ProjectCard({ project, onDelete }: Props) {
+export function ProjectCard({ project, onDelete, onRename }: Props) {
     return (
         <article className="project-card">
-            <Link to={`/projects/${project.id}`} className="project-card-link">
-                <header className="project-card-head">
+            <header className="project-card-head">
+                {onRename ? (
+                    <InlineRename
+                        as="h3"
+                        value={project.title}
+                        onRename={name => onRename(project.id, name)}
+                    />
+                ) : (
                     <h3>{project.title}</h3>
-                    <span className="badge badge-primary">{project.tempo} BPM</span>
-                </header>
+                )}
+            </header>
+            <Link to={`/projects/${project.id}`} className="project-card-link">
                 <p className="project-card-desc">
                     {project.description || (
                         <span className="text-muted">sem descrição</span>

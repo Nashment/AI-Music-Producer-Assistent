@@ -65,6 +65,7 @@ class GenerationResult(BaseModel):
     """Full generation result — returned when polling for status/result."""
     id: uuid.UUID
     status: str
+    name: Optional[str] = None
     project_id: Optional[uuid.UUID] = None
     audio_file_id: Optional[uuid.UUID] = None
     parent_generation_id: Optional[uuid.UUID] = None
@@ -82,6 +83,11 @@ class GenerationResult(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class GenerationRename(BaseModel):
+    """Pedido para renomear uma geracao/corte (nome amigavel)."""
+    name: str
 
 
 class CutGenerationRequest(BaseModel):

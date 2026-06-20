@@ -17,7 +17,7 @@ interface Props {
 
 /**
  * Form partilhado para criar/editar projeto. Usa o mesmo shape em ambos os
- * modos: titulo + descricao + tempo (BPM).
+ * modos: titulo + descricao.
  */
 export function ProjectForm({
     initial,
@@ -29,13 +29,11 @@ export function ProjectForm({
     const { t } = useLanguage();
     const [title, setTitle] = useState(initial?.title ?? '');
     const [description, setDescription] = useState(initial?.description ?? '');
-    const [tempo, setTempo] = useState<number>(initial?.tempo ?? 120);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         setTitle(initial?.title ?? '');
         setDescription(initial?.description ?? '');
-        setTempo(initial?.tempo ?? 120);
     }, [initial?.id]);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -45,15 +43,13 @@ export function ProjectForm({
             setError(t.projectForm.titleRequired);
             return;
         }
-        if (tempo < 1 || tempo > 400) {
-            setError(t.projectForm.tempoRange);
-            return;
-        }
         try {
             await onSubmit({
                 title: title.trim(),
                 description: description.trim(),
-                tempo,
+                // BPM removido da UI; mantemos um valor por omissão para
+                // compatibilidade com o backend, que ainda espera o campo.
+                tempo: initial?.tempo ?? 120,
             });
         } catch (err: any) {
             setError(err?.detail ?? t.projectForm.saveError);
@@ -81,19 +77,6 @@ export function ProjectForm({
                     onChange={e => setDescription(e.target.value)}
                     placeholder={t.projectForm.descPlaceholder}
                 />
-            </div>
-
-            <div className="field">
-                <label htmlFor="project-tempo">{t.projectForm.tempoLabel}</label>
-                <input
-                    id="project-tempo"
-                    type="number"
-                    min={1}
-                    max={400}
-                    value={tempo}
-                    onChange={e => setTempo(Number(e.target.value))}
-                />
-                <span className="field-hint">{t.projectForm.tempoHint}</span>
             </div>
 
             {error ? <p className="error-text">{error}</p> : null}

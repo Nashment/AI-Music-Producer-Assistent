@@ -99,6 +99,12 @@
     gap: var(--space-1);
 }
 .audio-upload-icon { font-size: 1.6rem; }
+.audio-upload-spinner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+}
 .audio-upload-title { color: var(--text); font-weight: 600; }
 .audio-upload-hint { color: var(--muted); font-size: 0.8rem; }
 

@@ -11,6 +11,7 @@ import EmptyState from '../components/Layout/EmptyState';
 import Modal from '../components/Layout/Modal';
 import ConfirmDialog from '../components/Layout/ConfirmDialog';
 import ProjectForm from '../components/Project/ProjectForm';
+import InlineRename from '../components/Layout/InlineRename';
 import { useToast, describeError } from '../components/Layout/Toast';
 import {
     ProjectCreate,
@@ -60,6 +61,17 @@ function ProjectDetailPage() {
         }
     };
 
+    const handleRenameProject = async (name: string) => {
+        if (!project) return;
+        try {
+            await updateProject(project.id, { title: name });
+            toast.success(t.rename.saved);
+        } catch (err) {
+            toast.error(describeError(err, t.rename.error));
+            throw err;
+        }
+    };
+
     const handleDeleteProject = async () => {
         setDeletingProject(true);
         try {
@@ -84,6 +96,16 @@ function ProjectDetailPage() {
         }
     };
 
+    const handleRenameAudio = async (id: string, name: string) => {
+        try {
+            await audios.renameAudio(id, name);
+            toast.success(t.rename.saved);
+        } catch (err) {
+            toast.error(describeError(err, t.rename.error));
+            throw err;
+        }
+    };
+
     const handleDeleteAudio = async () => {
         if (!confirmDelAudioId) return;
         setDeletingAudio(true);
@@ -101,13 +123,18 @@ function ProjectDetailPage() {
     return (
         <div className="project-detail">
             <PageHeader
-                title={project.title}
+                title={
+                    <InlineRename
+                        as="span"
+                        value={project.title}
+                        onRename={handleRenameProject}
+                    />
+                }
                 description={project.description || t.projectDetail.noDescription}
                 backTo="/projects"
                 backLabel={t.projectDetail.back}
                 actions={
                     <>
-                        <span className="badge badge-primary">{project.tempo} BPM</span>
                         <button
                             type="button"
                             className="btn btn-secondary"
@@ -157,6 +184,7 @@ function ProjectDetailPage() {
                     <AudioList
                         projectId={project.id}
                         audios={audios.audios}
+                        onRename={handleRenameAudio}
                         onDelete={id => setConfirmDelAudioId(id)}
                     />
                 )}

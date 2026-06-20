@@ -3,6 +3,7 @@ import { generationService } from '../../services/generation/generationService';
 import { GenerationResult } from '../../services/generation/generationResponseTypes';
 import useLanguage from '../../hooks/language/useLanguage';
 import Spinner from '../Layout/Spinner';
+import { notationCapabilities } from '../../utils/common';
 
 interface Props {
     cut: GenerationResult;
@@ -35,6 +36,8 @@ function toPhase(status: string | null | undefined, hasKey: boolean): NotationPh
  */
 export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
     const { t } = useLanguage();
+    // Notações permitidas dependem do instrumento do corte (herdado da geração).
+    const { score: podePartitura, tab: podeTablatura } = notationCapabilities(cut.instrument);
 
     const partituraPhase = toPhase(cut.partitura_status, !!cut.partitura_storage_key);
     const tablaturaPhase = toPhase(cut.tablatura_status, !!cut.tablatura_storage_key);
@@ -46,11 +49,27 @@ export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
     const [loadingTabUrl, setLoadingTabUrl] = useState(false);
     const [loadingAudio, setLoadingAudio] = useState(false);
 
+    // Preview: Blob URL carregado on-demand para ouvir o corte antes de descarregar
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
+
     // Limpar URLs ao mudar de corte
     useEffect(() => {
         setPartituraUrl(null);
         setTablaturaUrl(null);
+        // Libertar o blob de preview do corte anterior
+        setPreviewUrl(prev => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+        });
     }, [cut.id]);
+
+    // Garantir a libertação do blob ao desmontar
+    useEffect(() => {
+        return () => {
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+        };
+    }, [previewUrl]);
 
     // Quando partitura transita para completed → buscar URL automaticamente
     useEffect(() => {
@@ -99,6 +118,19 @@ export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
         }
     };
 
+    const handleLoadPreview = async () => {
+        if (previewUrl || loadingPreview) return;
+        setLoadingPreview(true);
+        try {
+            const blobUrl = await generationService.fetchGenerationAudioBlobUrl(cut.id);
+            setPreviewUrl(blobUrl);
+        } catch (e: any) {
+            onError(e?.detail ?? t.cutPanel.audioError);
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
     const handleDownloadAudio = async () => {
         setLoadingAudio(true);
         try {
@@ -126,6 +158,24 @@ export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
                 </p>
             </header>
 
+            {/* ---- Pré-escuta do corte ---- */}
+            <div className="cut-action-preview">
+                {previewUrl ? (
+                    <audio controls src={previewUrl} className="cut-action-preview-el" />
+                ) : (
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={handleLoadPreview}
+                        disabled={loadingPreview}
+                    >
+                        {loadingPreview
+                            ? <Spinner size="sm" label={t.cutPanel.loadingPreview} />
+                            : <>{t.cutPanel.playPreview}</>}
+                    </button>
+                )}
+            </div>
+
             <div className="cut-action-buttons">
                 <button
                     type="button"
@@ -139,37 +189,46 @@ export function CutActionPanel({ cut, onError, onNotationRequested }: Props) {
                 </button>
             </div>
 
-            {/* ---- Partitura ---- */}
-            <NotationSection
-                label={t.cutPanel.score}
-                generateLabel={t.cutPanel.generateScore}
-                downloadName={`partitura_${cut.id.slice(0, 8)}.pdf`}
-                phase={partituraPhase}
-                pdfUrl={partituraUrl}
-                loadingUrl={loadingPartUrl}
-                errorLabel={t.cutPanel.scoreError}
-                onGenerate={handleRequestPartitura}
-                retryLabel={t.cutPanel.retry}
-                regenerateLabel={t.cutPanel.regenerate}
-                downloadLabel={t.cutPanel.download}
-                generatingLabel={t.cutPanel.generating}
-            />
+            {/* ---- Partitura (todos os instrumentos menos bateria) ---- */}
+            {podePartitura && (
+                <NotationSection
+                    label={t.cutPanel.score}
+                    generateLabel={t.cutPanel.generateScore}
+                    downloadName={`partitura_${cut.id.slice(0, 8)}.pdf`}
+                    phase={partituraPhase}
+                    pdfUrl={partituraUrl}
+                    loadingUrl={loadingPartUrl}
+                    errorLabel={t.cutPanel.scoreError}
+                    onGenerate={handleRequestPartitura}
+                    retryLabel={t.cutPanel.retry}
+                    regenerateLabel={t.cutPanel.regenerate}
+                    downloadLabel={t.cutPanel.download}
+                    generatingLabel={t.cutPanel.generating}
+                />
+            )}
 
-            {/* ---- Tablatura ---- */}
-            <NotationSection
-                label={t.cutPanel.tab}
-                generateLabel={t.cutPanel.generateTab}
-                downloadName={`tablatura_${cut.id.slice(0, 8)}.pdf`}
-                phase={tablaturaPhase}
-                pdfUrl={tablaturaUrl}
-                loadingUrl={loadingTabUrl}
-                errorLabel={t.cutPanel.tabError}
-                onGenerate={handleRequestTablature}
-                retryLabel={t.cutPanel.retry}
-                regenerateLabel={t.cutPanel.regenerate}
-                downloadLabel={t.cutPanel.download}
-                generatingLabel={t.cutPanel.generating}
-            />
+            {/* ---- Tablatura (só guitarra) ---- */}
+            {podeTablatura && (
+                <NotationSection
+                    label={t.cutPanel.tab}
+                    generateLabel={t.cutPanel.generateTab}
+                    downloadName={`tablatura_${cut.id.slice(0, 8)}.pdf`}
+                    phase={tablaturaPhase}
+                    pdfUrl={tablaturaUrl}
+                    loadingUrl={loadingTabUrl}
+                    errorLabel={t.cutPanel.tabError}
+                    onGenerate={handleRequestTablature}
+                    retryLabel={t.cutPanel.retry}
+                    regenerateLabel={t.cutPanel.regenerate}
+                    downloadLabel={t.cutPanel.download}
+                    generatingLabel={t.cutPanel.generating}
+                />
+            )}
+
+            {/* Instrumentos sem notação (ex.: bateria) — só download + pré-escuta */}
+            {!podePartitura && !podeTablatura && (
+                <p className="text-muted text-sm">{t.cutPanel.noNotation}</p>
+            )}
         </div>
     );
 }

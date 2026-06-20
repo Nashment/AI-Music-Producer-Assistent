@@ -33,6 +33,7 @@ from app.domain.dtos.endpoints.generation import (
     GenerationResult,
     GenerationListResponse,
     CutGenerationRequest,
+    GenerationRename,
 )
 
 router = APIRouter()
@@ -176,6 +177,19 @@ async def get_generation_result(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     resultado = await GenerationService(db).get_generation(generation_id, str(user_id))
+    return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}", on_error=_handle_generation_error, success_factory=lambda gen: gen,
+    )
+
+
+@router.patch("/{generation_id}", response_model=GenerationResult)
+async def rename_generation(
+    generation_id: str,
+    body: GenerationRename,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Renomeia uma geracao/corte (nome amigavel). name vazio limpa o nome."""
+    resultado = await GenerationService(db).rename_generation(generation_id, str(user_id), body.name)
     return handle_result(resultado, instance=f"/api/v1/generation/{generation_id}", on_error=_handle_generation_error, success_factory=lambda gen: gen,
     )
 

@@ -78,3 +78,32 @@ BEGIN
             ADD COLUMN tablatura_status VARCHAR(32) DEFAULT NULL;
     END IF;
 END $$;
+
+-- ==========================================
+-- Migração 004 — nomes amigáveis (rename)
+-- ==========================================
+-- Permite ao utilizador renomear áudios e gerações/cortes sem afetar as
+-- storage keys do R2. Colunas opcionais (NULL = usar nome derivado).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'audio_files'
+          AND column_name = 'display_name'
+    ) THEN
+        ALTER TABLE audio_files
+            ADD COLUMN display_name VARCHAR(255) DEFAULT NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'generations'
+          AND column_name = 'name'
+    ) THEN
+        ALTER TABLE generations
+            ADD COLUMN name VARCHAR(255) DEFAULT NULL;
+    END IF;
+END $$;

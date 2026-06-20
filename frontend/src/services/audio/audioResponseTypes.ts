@@ -7,6 +7,7 @@ export type AudioAnalysisResponse = {
     id: string;            // uuid
     project_id: string;    // uuid
     storage_key: string;   // chave R2/S3 (ex: audio/uuid_filename.mp3)
+    display_name?: string | null; // nome amigavel definido pelo utilizador
     duration: number;
     sample_rate: number;
     bpm?: number | null;

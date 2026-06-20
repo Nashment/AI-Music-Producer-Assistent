@@ -1,15 +1,15 @@
 import { Link } from 'react-router-dom';
 import { AudioAnalysisResponse } from '../../services/audio/audioResponseTypes';
 import useLanguage from '../../hooks/language/useLanguage';
+import { audioDisplayName } from '../../utils/common';
+import InlineRename from '../Layout/InlineRename';
 
 interface Props {
     projectId: string;
     audio: AudioAnalysisResponse;
     onDelete?: (id: string) => void;
-}
-
-function basename(p: string): string {
-    return p.split(/[\\/]/).pop() ?? 'audio';
+    /** Renomeia o áudio. Quando omitido, o lápis não aparece. */
+    onRename?: (id: string, name: string) => Promise<unknown>;
 }
 
 function formatDuration(s: number): string {
@@ -19,21 +19,28 @@ function formatDuration(s: number): string {
     return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export function AudioCard({ projectId, audio, onDelete }: Props) {
+export function AudioCard({ projectId, audio, onDelete, onRename }: Props) {
     const { t } = useLanguage();
+    const name = audioDisplayName(audio);
 
     return (
         <article className="audio-card">
+            <header className="audio-card-head">
+                <span className="audio-card-icon">🎵</span>
+                {onRename ? (
+                    <InlineRename
+                        as="h4"
+                        value={name}
+                        onRename={n => onRename(audio.id, n)}
+                    />
+                ) : (
+                    <h4 title={name}>{name}</h4>
+                )}
+            </header>
             <Link
                 to={`/projects/${projectId}/audio/${audio.id}`}
                 className="audio-card-link"
             >
-                <header className="audio-card-head">
-                    <span className="audio-card-icon">🎵</span>
-                    <h4 title={basename(audio.storage_key)}>
-                        {basename(audio.storage_key)}
-                    </h4>
-                </header>
                 <ul className="audio-card-meta">
                     <li>{formatDuration(audio.duration)}</li>
                     <li>{audio.sample_rate} Hz</li>

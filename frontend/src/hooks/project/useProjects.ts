@@ -21,6 +21,7 @@ export function useProjects() {
         error: state.error,
 
         createProject: actions.createProject,
+        updateProject: actions.updateProject,
         deleteProject: actions.deleteProject,
         refresh: actions.loadProjects,
     };

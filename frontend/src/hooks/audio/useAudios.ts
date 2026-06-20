@@ -27,6 +27,7 @@ export function useAudios(projectId: string | undefined) {
                 ? actions.uploadAudio(projectId, file)
                 : Promise.reject(new Error('projectId em falta')),
         deleteAudio: actions.deleteAudio,
+        renameAudio: actions.renameAudio,
         adjustBpm: actions.adjustBpm,
         cutAudio: actions.cutAudio,
         separateTracks: actions.separateTracks,

@@ -136,6 +136,24 @@ class AudioService:
         return Sucesso(url)
 
     # ------------------------------------------------------------------
+    # Rename (nome amigavel)
+    # ------------------------------------------------------------------
+
+    async def rename_audio(
+        self, audio_id: uuid.UUID, user_id: str, display_name: str
+    ) -> Resultado:
+        """Define um nome amigavel para o audio. String vazia limpa o nome
+        (volta a mostrar o nome original)."""
+        resultado = await self.get_audio(audio_id, user_id)
+        if isinstance(resultado, Falha):
+            return resultado
+        clean = (display_name or "").strip()
+        updated = await AudioQueries.rename_audio_file(
+            db=self.db, audio_id=audio_id, display_name=clean or None
+        )
+        return Sucesso(updated)
+
+    # ------------------------------------------------------------------
     # Eliminacao
     # ------------------------------------------------------------------
 

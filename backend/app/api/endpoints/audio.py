@@ -27,7 +27,7 @@ from app.domain.errors.audio_errors import (
     IntervaloInvalido,
     AudioErro,
 )
-from app.domain.dtos.endpoints.audio import AudioAnalysisResponse, AudioListResponse
+from app.domain.dtos.endpoints.audio import AudioAnalysisResponse, AudioListResponse, AudioRename
 
 router = APIRouter()
 
@@ -136,6 +136,19 @@ async def get_audio_file(
     """
     resultado = await AudioService(db).get_audio_download_url(audio_id, str(user_id))
     return handle_result(resultado, instance=f"/api/v1/audio/{audio_id}", on_error=_handle_audio_error, success_factory=lambda url: JSONResponse(content={"url": url}),
+    )
+
+
+@router.patch("/{audio_id}", response_model=AudioAnalysisResponse)
+async def rename_audio(
+    audio_id: uuid.UUID,
+    body: AudioRename,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Renomeia um audio (nome amigavel). display_name vazio limpa o nome."""
+    resultado = await AudioService(db).rename_audio(audio_id, str(user_id), body.display_name)
+    return handle_result(resultado, instance=f"/api/v1/audio/{audio_id}", on_error=_handle_audio_error, success_factory=lambda record: record,
     )
 
 

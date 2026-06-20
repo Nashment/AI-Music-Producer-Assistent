@@ -16,6 +16,7 @@ import {
  *   POST   /generation/cover                    -> submete pedido de cover
  *   GET    /generation/{id}/status              -> estado actual
  *   GET    /generation/{id}                     -> resultado completo
+ *   PATCH  /generation/{id}                     -> renomeia (nome amigavel)
  *   DELETE /generation/{id}                     -> apaga geracao
  *
  *   GET    /generation/by-audio/{audio_id}      -> gerações raiz de um audio
@@ -52,6 +53,18 @@ export const generationService = {
 
     async getResult(generationId: string): Promise<GenerationResult> {
         const res = await request(`/generation/${generationId}`, { method: 'GET' });
+        return res.json();
+    },
+
+    /** Renomeia uma geração/corte (nome amigavel). String vazia limpa o nome. */
+    async renameGeneration(
+        generationId: string,
+        name: string,
+    ): Promise<GenerationResult> {
+        const res = await request(`/generation/${generationId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name }),
+        });
         return res.json();
     },
 

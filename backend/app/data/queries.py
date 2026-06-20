@@ -182,6 +182,21 @@ class AudioQueries:
         return audio
 
     @staticmethod
+    async def rename_audio_file(
+        db: AsyncSession, audio_id: uuid.UUID, display_name: Optional[str]
+    ) -> Optional[AudioFile]:
+        """Atualiza o nome amigavel de um audio. display_name=None volta a
+        mostrar o nome original derivado da storage_key."""
+        stmt = select(AudioFile).where(AudioFile.id == audio_id)
+        result = await db.execute(stmt)
+        audio = result.scalar_one_or_none()
+        if audio:
+            audio.display_name = display_name
+            await db.commit()
+            await db.refresh(audio)
+        return audio
+
+    @staticmethod
     async def delete_audio_file(db: AsyncSession, audio_id: uuid.UUID) -> bool:
         stmt = select(AudioFile).where(AudioFile.id == audio_id)
         result = await db.execute(stmt)
@@ -315,6 +330,25 @@ class GenerationQueries:
                 generation.error_message = error_message
             if status == GenerationStatusEnum.COMPLETED:
                 generation.completed_at = datetime.utcnow()
+            await db.commit()
+            await db.refresh(generation)
+        return generation
+
+    @staticmethod
+    async def rename_generation(
+        db: AsyncSession, generation_id: str, name: Optional[str]
+    ) -> Optional[Generation]:
+        """Atualiza o nome amigavel de uma geracao/corte. name=None volta a
+        mostrar o rotulo derivado do prompt."""
+        try:
+            gen_uuid = uuid.UUID(str(generation_id))
+        except (ValueError, AttributeError):
+            return None
+        stmt = select(Generation).where(Generation.id == gen_uuid)
+        result = await db.execute(stmt)
+        generation = result.scalar_one_or_none()
+        if generation:
+            generation.name = name
             await db.commit()
             await db.refresh(generation)
         return generation

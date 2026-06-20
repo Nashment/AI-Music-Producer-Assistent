@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 interface Props {
-    title: string;
+    title: ReactNode;
     description?: string;
     backTo?: string;
     backLabel?: string;
