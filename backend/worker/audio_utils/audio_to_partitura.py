@@ -1,47 +1,33 @@
 """Geração de partitura (PDF) a partir de MIDI.
 
-Pipeline novo:
+Pipeline:
     MIDI → music21 (quantização + armadura de tonalidade + compasso)
-         → MusicXML → MuseScore → PDF
-    Fallback sem MuseScore: .ly gerado por template → LilyPond → PDF.
+         → LilyPond (motor de renderização nativo do music21) → PDF
+    Fallback: .ly gerado por template manual a partir do MIDI cru → LilyPond → PDF
+    (usado apenas se o passo anterior falhar, ex.: MIDI degenerado ou falha
+    interna do music21).
 
-Face à versão anterior (MIDI cru → MuseScore / midi2ly):
-- A quantização é controlada por nós, ao BPM real do MIDI.
-- A partitura sai com armadura de tonalidade (analisada pelo music21 ou
-  fornecida pela análise de áudio) em vez de acidentes em todas as notas.
-- O midi2ly deixa de ser necessário.
+Não há dependência de MuseScore: o LilyPond já vem instalado na imagem do
+worker e o music21 sabe exportar diretamente para ele (`score.write('lily.pdf')`),
+o que evita passar por MusicXML e um segundo motor externo. A quantização e a
+armadura de tonalidade calculadas pelo music21 são as que efetivamente chegam
+ao PDF final, em vez de serem descartadas.
 """
 
+import logging
 import os
-import subprocess
-import tempfile
 from pathlib import Path
 
-from app.core.config import settings
 from worker.audio_utils.audio_to_tablature2 import (
     CAMINHO_LILYPOND,
-    compilar_pdf_lilypond,
     gerar_ly_partitura,
 )
 
-CAMINHO_MUSESCORE = settings.MUSESCORE_PATH
-
-
-def _executaveis_musescore_candidatos():
-    candidates = [CAMINHO_MUSESCORE]
-    if os.name != "nt":
-        candidates.extend([
-            "/usr/bin/mscore3",
-            "/usr/bin/musescore",
-            "mscore3",
-            "musescore",
-        ])
-    # remove duplicados preservando ordem
-    return list(dict.fromkeys(candidates))
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# MIDI → MusicXML (music21)
+# MIDI → score do music21 (quantizado, com armadura e compasso)
 # ---------------------------------------------------------------------------
 
 def _tonalidade_para_music21(tonalidade):
@@ -59,8 +45,9 @@ def _tonalidade_para_music21(tonalidade):
         return None
 
 
-def _midi_para_musicxml(caminho_midi, caminho_xml, tonalidade=None, compasso="4/4"):
-    """Carrega o MIDI, quantiza e escreve MusicXML com armadura e compasso."""
+def _midi_para_score(caminho_midi, tonalidade=None, compasso="4/4"):
+    """Carrega o MIDI, quantiza e devolve um score do music21 já com
+    armadura de tonalidade, compasso e marca de metrónomo."""
     from music21 import converter, meter, tempo as m21tempo
 
     score = converter.parse(caminho_midi, quantizePost=True,
@@ -69,8 +56,7 @@ def _midi_para_musicxml(caminho_midi, caminho_xml, tonalidade=None, compasso="4/
     chave = _tonalidade_para_music21(tonalidade)
     if chave is None:
         try:
-            analisada = score.analyze("key")
-            chave = analisada
+            chave = score.analyze("key")
         except Exception:
             chave = None
 
@@ -85,38 +71,110 @@ def _midi_para_musicxml(caminho_midi, caminho_xml, tonalidade=None, compasso="4/
     if not score.recurse().getElementsByClass(m21tempo.MetronomeMark):
         score.insert(0, m21tempo.MetronomeMark(number=120))
 
-    score.write("musicxml", fp=caminho_xml)
-    return caminho_xml
+    return score
 
 
 # ---------------------------------------------------------------------------
 # Renderização
 # ---------------------------------------------------------------------------
 
-def _renderizar_com_musescore(caminho_entrada, caminho_pdf):
-    """Tenta os executáveis MuseScore. Devolve (pdf | None, lista_de_erros)."""
-    erros = []
-    for executable in _executaveis_musescore_candidatos():
+def _extrair_bpm_do_score(score):
+    """Devolve o BPM (MetronomeMark) já presente no score, se existir.
+
+    O `converter.parse` de um MIDI com tempo embutido já cria este objeto
+    automaticamente (é assim que o BPM real chega até aqui) -- isto só lê
+    o valor, não o insere.
+    """
+    from music21 import tempo as m21tempo
+
+    marcas = score.recurse().getElementsByClass(m21tempo.MetronomeMark)
+    if marcas:
         try:
-            subprocess.run(
-                [executable, "-o", caminho_pdf, caminho_entrada],
-                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            )
-            if os.path.exists(caminho_pdf):
-                return caminho_pdf, erros
-            erros.append(f"{executable}: executou mas não gerou {caminho_pdf}")
-        except FileNotFoundError:
-            erros.append(f"{executable}: executável não encontrado")
-        except subprocess.CalledProcessError as e:
-            erros.append(f"{executable}: {(e.stderr or str(e)).strip()}")
-        except Exception as e:
-            erros.append(f"{executable}: {e}")
-    return None, erros
+            return float(marcas[0].number)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _injetar_tempo_no_ly(ly_path, bpm):
+    """Insere um `\\tempo` logo a seguir ao `\\time` no ficheiro .ly.
+
+    Necessário porque o conversor LilyPond do music21 (`music21.lily.translate`)
+    não traduz `MetronomeMark` -- não existe nenhuma referência a "tempo" no
+    código desse módulo. Sem isto o BPM nunca aparece na partitura, por mais
+    que o music21 o tenha corretamente identificado internamente.
+    """
+    try:
+        texto = ly_path.read_text(encoding="utf-8")
+        idx = texto.find("\\time ")
+        if idx == -1:
+            return False
+        fim_linha = texto.find("\n", idx)
+        if fim_linha == -1:
+            fim_linha = len(texto)
+        marca = f"\\tempo 4 = {int(round(bpm))}\n"
+        ly_path.write_text(texto[:fim_linha + 1] + marca + texto[fim_linha + 1:], encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.warning("[partitura] Não foi possível injetar \\tempo no .ly: %s", e)
+        return False
+
+
+def _renderizar_com_music21_lilypond(score, caminho_pdf):
+    """Renderiza o score do music21 (já quantizado, com armadura/compasso)
+    diretamente para PDF usando o motor LilyPond nativo do music21.
+
+    Devolve (pdf | None, erro | None).
+    """
+    if not os.path.exists(CAMINHO_LILYPOND):
+        return None, f"LilyPond não encontrado em: {CAMINHO_LILYPOND}"
+
+    from music21 import environment
+    from worker.audio_utils.audio_to_tablature2 import compilar_pdf_lilypond
+
+    # Definido apenas em memória para este processo (não persiste em disco,
+    # não precisa de escrita em ~/.music21rc como o UserSettings faria).
+    try:
+        environment.Environment()["lilypondPath"] = CAMINHO_LILYPOND
+    except Exception as e:
+        return None, f"Não foi possível configurar lilypondPath no music21: {e}"
+
+    pdf_path = Path(caminho_pdf)
+    ly_path = pdf_path.with_suffix(".ly")
+    bpm = _extrair_bpm_do_score(score)
+
+    try:
+        # 1) Só gerar o .ly (sem compilar) para podermos injetar o \tempo,
+        #    que o music21 não escreve sozinho.
+        gerado = score.write("lily", fp=str(ly_path))
+        gerado_path = Path(gerado)
+        if gerado_path != ly_path:
+            gerado_path.replace(ly_path)
+
+        if bpm:
+            _injetar_tempo_no_ly(ly_path, bpm)
+
+        # 2) Compilar com o LilyPond diretamente (mesmo binário, sem passar
+        #    outra vez pelo wrapper do music21).
+        compilar_pdf_lilypond(str(ly_path))
+
+        generated_pdf = ly_path.with_suffix(".pdf")
+        if generated_pdf.exists():
+            if generated_pdf != pdf_path:
+                generated_pdf.replace(pdf_path)
+            return str(pdf_path), None
+        return None, f"music21/LilyPond executou mas não gerou PDF em {generated_pdf}"
+    except Exception as e:
+        return None, f"music21/LilyPond: {e}"
+    finally:
+        ly_path.unlink(missing_ok=True)
 
 
 def _gerar_com_lilypond(caminho_midi, caminho_pdf, tonalidade=None):
-    """Fallback: partitura via template .ly + LilyPond."""
+    """Fallback: partitura via template .ly manual + LilyPond, direto do MIDI
+    cru (sem passar pelo music21). Usado apenas se o passo principal falhar."""
     import pretty_midi
+    from worker.audio_utils.audio_to_tablature2 import compilar_pdf_lilypond
 
     if not os.path.exists(CAMINHO_LILYPOND):
         return None, f"LilyPond não encontrado em: {CAMINHO_LILYPOND}"
@@ -145,7 +203,9 @@ def exportar_pdf_automatico(caminho_midi, caminho_pdf="solo_partitura.pdf",
                             tonalidade=None, compasso="4/4"):
     """Converte MIDI em partitura PDF.
 
-    Ordem: music21 → MusicXML → MuseScore; fallback LilyPond.
+    Ordem: music21 (quantização + armadura) → LilyPond nativo do music21.
+    Fallback: LilyPond direto sobre o MIDI cru (template manual), caso o
+    passo principal falhe.
     Levanta RuntimeError se nenhum caminho funcionar.
     """
     if not os.path.exists(caminho_midi):
@@ -153,39 +213,41 @@ def exportar_pdf_automatico(caminho_midi, caminho_pdf="solo_partitura.pdf",
 
     erros = []
 
-    # 1) music21 → MusicXML → MuseScore (quantizado, com armadura)
-    xml_tmp = None
+    # 1) music21 (quantizado, com armadura) → LilyPond nativo do music21
     try:
-        tmp = tempfile.NamedTemporaryFile(suffix=".musicxml", delete=False)
-        tmp.close()
-        xml_tmp = tmp.name
-        _midi_para_musicxml(caminho_midi, xml_tmp, tonalidade, compasso)
-
-        pdf, erros_ms = _renderizar_com_musescore(xml_tmp, caminho_pdf)
-        erros.extend(erros_ms)
+        score = _midi_para_score(caminho_midi, tonalidade, compasso)
+        pdf, erro = _renderizar_com_music21_lilypond(score, caminho_pdf)
         if pdf:
+            logger.info(
+                "[partitura] Gerada via music21 + LilyPond (quantizada, com armadura de tonalidade): %s",
+                pdf,
+            )
             return pdf
+        if erro:
+            erros.append(erro)
     except Exception as e:
-        erros.append(f"music21/MusicXML: {e}")
-    finally:
-        if xml_tmp:
-            Path(xml_tmp).unlink(missing_ok=True)
+        erros.append(f"music21/LilyPond: {e}")
 
-    # 2) MuseScore diretamente sobre o MIDI (sem quantização nossa)
-    pdf, erros_ms = _renderizar_com_musescore(caminho_midi, caminho_pdf)
-    erros.extend(erros_ms)
-    if pdf:
-        return pdf
+    logger.warning(
+        "[partitura] Motor principal (music21 + LilyPond) falhou (%s); "
+        "a tentar fallback LilyPond direto do MIDI cru.",
+        "; ".join(erros),
+    )
 
-    # 3) Fallback LilyPond
+    # 2) Fallback: LilyPond direto sobre o MIDI cru (template manual)
     fallback_pdf, fallback_error = _gerar_com_lilypond(caminho_midi, caminho_pdf, tonalidade)
     if fallback_pdf:
+        logger.info(
+            "[partitura] Gerada via fallback LilyPond direto do MIDI cru (sem quantização/armadura do music21): %s",
+            fallback_pdf,
+        )
         return fallback_pdf
 
     raise RuntimeError(" ; ".join(erros + ([fallback_error] if fallback_error else [])))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     try:
         resultado = exportar_pdf_automatico("teste_rapido.mid", "Partitura_Solo_Guitarra.pdf")
         print(f"Partitura gerada: {resultado}")

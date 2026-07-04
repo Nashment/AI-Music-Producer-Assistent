@@ -4,9 +4,16 @@
 -- Cada bloco usa IF EXISTS / DO $$ para ser idempotente
 -- (pode ser executado múltiplas vezes sem erros).
 --
--- NOTA: As migrações 002 e 003 já estão incorporadas em 02_create_tables.sql.
--- Este ficheiro serve apenas para atualizar bases de dados existentes criadas
--- com versões anteriores do schema.
+-- NOTA: TODAS as migrações abaixo (001 a 005) já estão incorporadas em
+-- 02_create_tables.sql -- uma instalação nova (`01_init_schema.sql` +
+-- `02_create_tables.sql`) fica com o schema completo e atualizado sem
+-- precisar de correr este ficheiro.
+--
+-- Este ficheiro so continua a ser necessario para atualizar bases de dados
+-- ja existentes, criadas com versoes anteriores do schema (ex.: producao).
+-- Sempre que 02_create_tables.sql for alterado para incluir uma coluna nova,
+-- adiciona aqui o bloco ALTER TABLE idempotente correspondente, para quem
+-- tiver uma base de dados antiga a poder atualizar.
 
 -- ==========================================
 -- Migração 001 — remover faixa_separada_path da tabela generations
@@ -106,4 +113,46 @@ BEGIN
         ALTER TABLE generations
             ADD COLUMN name VARCHAR(255) DEFAULT NULL;
     END IF;
+END $$;
+
+-- ==========================================
+-- Migração 005 — audio_files.project_id passa a obrigatório
+-- ==========================================
+-- Um AudioFile deixava de ter projeto (project_id = NULL) quando o projeto
+-- era apagado (ON DELETE SET NULL), o que permitia áudios "órfãos" sem
+-- projeto associado. Isso deixou de fazer sentido: um áudio só existe
+-- dentro de um projeto. Passa a ser NOT NULL com ON DELETE CASCADE —
+-- eliminar o projeto elimina agora também os áudios que lhe pertencem,
+-- tal como já acontecia com generations.project_id.
+--
+-- NOTA: os audio_files órfãos existentes (project_id NULL) são apagados
+-- antes de aplicar a restrição NOT NULL. Os objetos correspondentes no
+-- Cloudflare R2 não são apagados por este script — se existirem órfãos,
+-- os ficheiros no R2 devem ser limpos manualmente.
+DO $$
+BEGIN
+    DELETE FROM audio_files WHERE project_id IS NULL;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'audio_files'
+          AND column_name = 'project_id'
+          AND is_nullable = 'YES'
+    ) THEN
+        ALTER TABLE audio_files
+            ALTER COLUMN project_id SET NOT NULL;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'audio_files'
+          AND constraint_name = 'audio_files_project_id_fkey'
+    ) THEN
+        ALTER TABLE audio_files
+            DROP CONSTRAINT audio_files_project_id_fkey;
+    END IF;
+
+    ALTER TABLE audio_files
+        ADD CONSTRAINT audio_files_project_id_fkey
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
 END $$;

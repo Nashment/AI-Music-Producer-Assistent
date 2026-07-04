@@ -161,7 +161,20 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
 
         TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Audio de referencia (o que o utilizador carregou) -- e a este que o
+        # audio gerado foi ajustado no pos-processamento (ver
+        # _ajustar_audio_gerado_async: bpm_original/tom_original vem daqui).
+        # Reutilizar os mesmos valores mantem a partitura/tablatura coerente
+        # com essa correcao, em vez de reanalisar o audio gerado do zero.
+        audio_base = await AudioQueries.get_audio_file(db=db, audio_id=generation.audio_file_id)
+        bpm_base = getattr(audio_base, "bpm", None)
+        tom_base = getattr(audio_base, "key", None)
+        compasso_base = getattr(audio_base, "time_signature", None)
+
         with storage.temp_download(generation.audio_storage_key) as audio_path:
+            bpm_base, tom_base, compasso_base = await _resolver_analise_audio(
+                audio_path, bpm_base, tom_base, compasso_base
+            )
             base      = f"{audio_path.stem}_{uuid.uuid4().hex[:8]}"
             midi_path = TABLATURA_OUTPUT_DIR / f"{base}.mid"
             ly_path   = TABLATURA_OUTPUT_DIR / f"{base}.ly"
@@ -171,18 +184,24 @@ async def _generate_tablature_for_generation_async(generation_id: str) -> dict:
                 if not extrair_midi_do_audio:
                     raise RuntimeError("basic_pitch nao disponivel no worker.")
 
-                midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+                midi_data = await asyncio.to_thread(
+                    extrair_midi_do_audio, str(audio_path), str(midi_path), bpm_base
+                )
 
                 eventos = extrair_eventos(midi_data) if midi_data else []
                 ded     = otimizar_tablatura([p for _, _, p in eventos]) if eventos else None
 
-                await asyncio.to_thread(gerar_ly_tablatura, midi_data, ded, str(ly_path))
+                await asyncio.to_thread(
+                    gerar_ly_tablatura, midi_data, ded, str(ly_path), bpm_base, tom_base, compasso_base
+                )
                 try:
                     await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
                 except RuntimeError:
                     # fallback: sem dedilhado otimizado (LilyPond escolhe as cordas)
                     ly_path.unlink(missing_ok=True)
-                    await asyncio.to_thread(gerar_ly_tablatura, midi_data, None, str(ly_path))
+                    await asyncio.to_thread(
+                        gerar_ly_tablatura, midi_data, None, str(ly_path), bpm_base, tom_base, compasso_base
+                    )
                     await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
                 ly_pdf = ly_path.with_suffix(".pdf")
 
@@ -241,7 +260,17 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
 
         PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+        # Audio de referencia -- ver nota identica em
+        # _generate_tablature_for_generation_async.
+        audio_base = await AudioQueries.get_audio_file(db=db, audio_id=generation.audio_file_id)
+        bpm_base = getattr(audio_base, "bpm", None)
+        tom_base = getattr(audio_base, "key", None)
+        compasso_base = getattr(audio_base, "time_signature", None)
+
         with storage.temp_download(generation.audio_storage_key) as audio_path:
+            bpm_base, tom_base, compasso_base = await _resolver_analise_audio(
+                audio_path, bpm_base, tom_base, compasso_base
+            )
             base      = f"{audio_path.stem}_{uuid.uuid4().hex[:8]}"
             midi_path = PARTITURA_OUTPUT_DIR / f"{base}.mid"
             pdf_final = PARTITURA_OUTPUT_DIR / f"{base}_partitura.pdf"
@@ -252,9 +281,13 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
                 if not exportar_pdf_automatico:
                     raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
 
-                midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+                midi_data = await asyncio.to_thread(
+                    extrair_midi_do_audio, str(audio_path), str(midi_path), bpm_base
+                )
 
-                await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+                await asyncio.to_thread(
+                    exportar_pdf_automatico, str(midi_path), str(pdf_final), tom_base, compasso_base
+                )
                 if not pdf_final.exists():
                     raise RuntimeError("PDF de partitura nao foi criado.")
 
@@ -289,24 +322,83 @@ async def _generate_partitura_for_generation_async(generation_id: str) -> dict:
 
 
 @celery_app.task(bind=True, time_limit=600)
-def generate_tablature_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
-    """Gera tablatura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
+def generate_tablature_from_audio_key_task(
+    self, audio_storage_key: str, prefix: str = "audio",
+    bpm: float | None = None, tonalidade: str | None = None, compasso: str | None = None,
+) -> dict:
+    """Gera tablatura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}.
+
+    `bpm`/`tonalidade`/`compasso`: analise ja conhecida do audio original
+    (ex.: guardada em AudioFile.bpm/key/time_signature). Quando fornecidos,
+    evitam uma nova deteccao (que pode divergir da original, sobretudo em
+    audio isolado por separacao de instrumento).
+    """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(_generate_tablature_from_key_async(audio_storage_key, prefix))
+    return loop.run_until_complete(
+        _generate_tablature_from_key_async(audio_storage_key, prefix, bpm, tonalidade, compasso)
+    )
 
 
 @celery_app.task(bind=True, time_limit=600)
-def generate_partitura_from_audio_key_task(self, audio_storage_key: str, prefix: str = "audio") -> dict:
-    """Gera partitura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}."""
+def generate_partitura_from_audio_key_task(
+    self, audio_storage_key: str, prefix: str = "audio",
+    bpm: float | None = None, tonalidade: str | None = None, compasso: str | None = None,
+) -> dict:
+    """Gera partitura a partir de uma R2 key de audio. Devolve {"r2_key": "..."}.
+
+    Ver nota sobre `bpm`/`tonalidade`/`compasso` em generate_tablature_from_audio_key_task.
+    """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    return loop.run_until_complete(_generate_partitura_from_key_async(audio_storage_key, prefix))
+    return loop.run_until_complete(
+        _generate_partitura_from_key_async(audio_storage_key, prefix, bpm, tonalidade, compasso)
+    )
 
 
-async def _generate_tablature_from_key_async(audio_storage_key: str, prefix: str) -> dict:
+async def _resolver_analise_audio(
+    audio_path, bpm: float | None, tonalidade: str | None, compasso: str | None,
+) -> tuple[float | None, str | None, str]:
+    """Preenche bpm/tonalidade/compasso em falta com uma analise fresca do
+    audio (mesma analise usada no upload original: deteta BPM, tom e
+    compasso de forma coerente entre si) em vez de cair num "4/4" as cegas.
+
+    So corre a analise se faltar pelo menos um dos tres valores -- quando
+    ja vêm todos preenchidos (ex.: AudioFile com analise guardada), nao se
+    gasta tempo a reanalisar.
+    """
+    if bpm is not None and tonalidade is not None and compasso is not None:
+        return bpm, tonalidade, compasso
+
+    if not analisar_audio_completo:
+        logger.warning(
+            "[notacao] analisar_audio_completo indisponivel; a usar compasso 4/4 "
+            "e deteccao independente de bpm/tom em cada etapa."
+        )
+        return bpm, tonalidade, (compasso or "4/4")
+
+    try:
+        analise = await asyncio.to_thread(analisar_audio_completo, str(audio_path))
+        bpm = bpm if bpm is not None else analise.get("bpm")
+        tonalidade = tonalidade if tonalidade is not None else analise.get("key")
+        compasso = compasso if compasso is not None else analise.get("time_signature")
+        logger.info(
+            "[notacao] Analise de fallback aplicada: bpm=%s tonalidade=%s compasso=%s",
+            bpm, tonalidade, compasso,
+        )
+    except Exception as e:
+        logger.warning("[notacao] Falha na analise de fallback do audio (%s); a usar compasso 4/4.", e)
+
+    return bpm, tonalidade, (compasso or "4/4")
+
+
+async def _generate_tablature_from_key_async(
+    audio_storage_key: str, prefix: str,
+    bpm: float | None = None, tonalidade: str | None = None, compasso: str | None = None,
+) -> dict:
     TABLATURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with storage.temp_download(audio_storage_key) as audio_path:
+        bpm, tonalidade, compasso = await _resolver_analise_audio(audio_path, bpm, tonalidade, compasso)
         base      = f"{prefix}_{uuid.uuid4().hex[:8]}"
         midi_path = TABLATURA_OUTPUT_DIR / f"{base}.mid"
         ly_path   = TABLATURA_OUTPUT_DIR / f"{base}.ly"
@@ -314,15 +406,19 @@ async def _generate_tablature_from_key_async(audio_storage_key: str, prefix: str
         try:
             if not extrair_midi_do_audio:
                 raise RuntimeError("basic_pitch nao disponivel no worker.")
-            midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
+            midi_data = await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path), bpm)
             eventos = extrair_eventos(midi_data) if midi_data else []
             ded     = otimizar_tablatura([p for _, _, p in eventos]) if eventos else None
-            await asyncio.to_thread(gerar_ly_tablatura, midi_data, ded, str(ly_path))
+            await asyncio.to_thread(
+                gerar_ly_tablatura, midi_data, ded, str(ly_path), bpm, tonalidade, compasso
+            )
             try:
                 await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
             except RuntimeError:
                 ly_path.unlink(missing_ok=True)
-                await asyncio.to_thread(gerar_ly_tablatura, midi_data, None, str(ly_path))
+                await asyncio.to_thread(
+                    gerar_ly_tablatura, midi_data, None, str(ly_path), bpm, tonalidade, compasso
+                )
                 await asyncio.to_thread(compilar_pdf_lilypond, str(ly_path))
             ly_pdf = ly_path.with_suffix(".pdf")
             if ly_pdf.exists():
@@ -339,9 +435,13 @@ async def _generate_tablature_from_key_async(audio_storage_key: str, prefix: str
                     p.unlink(missing_ok=True)
 
 
-async def _generate_partitura_from_key_async(audio_storage_key: str, prefix: str) -> dict:
+async def _generate_partitura_from_key_async(
+    audio_storage_key: str, prefix: str,
+    bpm: float | None = None, tonalidade: str | None = None, compasso: str | None = None,
+) -> dict:
     PARTITURA_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     with storage.temp_download(audio_storage_key) as audio_path:
+        bpm, tonalidade, compasso = await _resolver_analise_audio(audio_path, bpm, tonalidade, compasso)
         base      = f"{prefix}_{uuid.uuid4().hex[:8]}"
         midi_path = PARTITURA_OUTPUT_DIR / f"{base}.mid"
         pdf_final = PARTITURA_OUTPUT_DIR / f"{base}_partitura.pdf"
@@ -350,8 +450,10 @@ async def _generate_partitura_from_key_async(audio_storage_key: str, prefix: str
                 raise RuntimeError("basic_pitch nao disponivel no worker.")
             if not exportar_pdf_automatico:
                 raise RuntimeError("exportar_pdf_automatico nao disponivel no worker.")
-            await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path))
-            await asyncio.to_thread(exportar_pdf_automatico, str(midi_path), str(pdf_final))
+            await asyncio.to_thread(extrair_midi_do_audio, str(audio_path), str(midi_path), bpm)
+            await asyncio.to_thread(
+                exportar_pdf_automatico, str(midi_path), str(pdf_final), tonalidade, compasso
+            )
             if not pdf_final.exists():
                 raise RuntimeError("PDF de partitura nao foi criado.")
             r2_key = f"partitura/{prefix}_{uuid.uuid4().hex[:8]}.pdf"
@@ -660,6 +762,13 @@ async def _generate_notation_files(generation_id: str, audio_path: Path):
     except Exception as e:
         logger.warning("Non-critical notation generation error for %s: %s", generation_id, e)
     finally:
+        # NOTA: esta funcao (_generate_notation_files) nao e chamada em
+        # lado nenhum do codigo atual -- codigo morto/orfao. O bypass de
+        # debug do .mid (pedido do utilizador para abrir no MuseScore) esta
+        # aplicado nas funcoes realmente usadas:
+        # _generate_tablature_for_generation_async,
+        # _generate_partitura_for_generation_async,
+        # _generate_tablature_from_key_async, _generate_partitura_from_key_async.
         if midi_path and midi_path.exists():
             midi_path.unlink(missing_ok=True)
         if ly_path and ly_path.exists():

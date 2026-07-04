@@ -59,8 +59,13 @@ CREATE TRIGGER update_projects_timestamp
 CREATE TABLE audio_files (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+    -- Obrigatorio: um audio nao existe fora de um projeto. Eliminar o
+    -- projeto elimina em cascata os audios que lhe pertencem.
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     storage_key VARCHAR(512) NOT NULL,  -- chave R2/S3 (ex: audio/uuid_filename.mp3)
+    -- Nome amigavel definido pelo utilizador (opcional). Quando NULL, o
+    -- frontend mostra o nome original derivado da storage_key.
+    display_name VARCHAR(255) DEFAULT NULL,
     file_size INTEGER,  -- bytes
     duration FLOAT,     -- segundos
     sample_rate INTEGER,
@@ -83,6 +88,10 @@ CREATE TABLE generations (
     -- Self-FK para suportar cortes derivados de uma geração original.
     -- Ver hierarquia: Audio -> Generation (IA) -> Generation (corte).
     parent_generation_id UUID REFERENCES generations(id) ON DELETE CASCADE,
+
+    -- Nome amigavel definido pelo utilizador (opcional). Quando NULL, o
+    -- frontend mostra um rotulo derivado do prompt.
+    name VARCHAR(255) DEFAULT NULL,
 
     -- Generation parameters
     prompt TEXT NOT NULL,

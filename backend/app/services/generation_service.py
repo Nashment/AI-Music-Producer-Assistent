@@ -174,15 +174,21 @@ class GenerationService:
         except ImportError as e:
             return Falha(WorkerIndisponivel(detalhe=str(e)))
 
-        key_resultado = await self._get_audio_s3_key_or_fail(audio_id, user_id)
-        if isinstance(key_resultado, Falha):
-            return key_resultado
-        audio_key = key_resultado.valor
+        audio_resultado = await self._get_audio_or_fail(audio_id, user_id)
+        if isinstance(audio_resultado, Falha):
+            return audio_resultado
+        audio = audio_resultado.valor
 
         try:
             result = await asyncio.to_thread(
                 lambda: generate_tablature_from_audio_key_task.apply_async(
-                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)},
+                    kwargs={
+                        "audio_storage_key": audio.storage_key, "prefix": str(audio_id),
+                        # Reutiliza a analise ja feita ao audio original em vez de
+                        # redetetar do zero (evita divergencias, sobretudo em audio
+                        # isolado por separacao de instrumento).
+                        "bpm": audio.bpm, "tonalidade": audio.key, "compasso": audio.time_signature,
+                    },
                     queue="notation",
                 ).get(timeout=120)
             )
@@ -206,15 +212,18 @@ class GenerationService:
         except ImportError as e:
             return Falha(WorkerIndisponivel(detalhe=str(e)))
 
-        key_resultado = await self._get_audio_s3_key_or_fail(audio_id, user_id)
-        if isinstance(key_resultado, Falha):
-            return key_resultado
-        audio_key = key_resultado.valor
+        audio_resultado = await self._get_audio_or_fail(audio_id, user_id)
+        if isinstance(audio_resultado, Falha):
+            return audio_resultado
+        audio = audio_resultado.valor
 
         try:
             result = await asyncio.to_thread(
                 lambda: generate_partitura_from_audio_key_task.apply_async(
-                    kwargs={"audio_storage_key": audio_key, "prefix": str(audio_id)},
+                    kwargs={
+                        "audio_storage_key": audio.storage_key, "prefix": str(audio_id),
+                        "bpm": audio.bpm, "tonalidade": audio.key, "compasso": audio.time_signature,
+                    },
                     queue="notation",
                 ).get(timeout=120)
             )

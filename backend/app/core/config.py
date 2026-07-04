@@ -117,11 +117,6 @@ class Settings:
         r"C:\Program Files\LilyPond\lilypond-2.24.4\bin\lilypond.exe" if os.name == "nt"
         else "/usr/bin/lilypond"
     )
-    MUSESCORE_PATH: str = os.getenv(
-        "MUSESCORE_PATH",
-        r"C:\Program Files\MuseScore 4\bin\MuseScore4.exe" if os.name == "nt"
-        else "/usr/bin/mscore3"
-    )
 
     # ------------------------------------------------------------------
     # Audio Processing Parameters

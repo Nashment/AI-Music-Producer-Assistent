@@ -66,7 +66,7 @@ class Project(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="projects")
-    audio_files = relationship("AudioFile", back_populates="project")
+    audio_files = relationship("AudioFile", back_populates="project", cascade="all, delete-orphan")
     generations = relationship("Generation", back_populates="project", cascade="all, delete-orphan")
 
 
@@ -76,7 +76,10 @@ class AudioFile(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    # Um AudioFile so existe dentro de um projeto: obrigatorio e eliminado em
+    # cascata quando o projeto e apagado (antes era SET NULL/opcional, o que
+    # permitia audios "orfaos" sem projeto).
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     parent_audio_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id", ondelete="SET NULL"), nullable=True)
 
     # Chave R2 do ficheiro no Cloudflare (ex: "audio/{uuid}_{filename}")

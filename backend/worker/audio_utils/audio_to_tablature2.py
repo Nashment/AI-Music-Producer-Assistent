@@ -443,7 +443,11 @@ def gerar_ly_tablatura(midi_data, dedilhado, caminho_ly, bpm=None,
 
 def gerar_ly_partitura(midi_data, caminho_ly, bpm=None,
                        tonalidade=None, compasso="4/4"):
-    """Gera um .ly de partitura convencional (fallback sem MuseScore)."""
+    """Gera um .ly de partitura convencional a partir do MIDI cru.
+
+    Usado apenas como fallback do pipeline principal (music21 → LilyPond),
+    caso este falhe.
+    """
     notas, bpm, tom_ly = _gerar_corpo_ly(midi_data, None, bpm, tonalidade, compasso)
     if not notas:
         raise RuntimeError("O MIDI não contém notas para gerar partitura.")
