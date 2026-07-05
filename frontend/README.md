@@ -102,6 +102,35 @@ npm run preview     # serve o build local sem nginx
 
 ---
 
+## Testes
+
+O `npm install` (passo do "Modo 2" acima) já trata de tudo — as versões
+exatas de todas as dependências, incluindo as de teste (Vitest, Testing
+Library, Playwright), ficam fixadas em `package-lock.json`, que está no
+repositório. Não é preciso nenhum passo extra para quem clona o projeto
+correr os testes unitários; só o Playwright pede uma instalação extra
+(binário do browser, não é npm package).
+
+```bash
+cd frontend
+npm install          # se ainda não tiveres feito (ver Modo 2 acima)
+npm run test:unit    # Vitest — testes unitários (não precisa do backend a correr)
+```
+
+Para os testes end-to-end (Playwright), é preciso instalar o browser uma
+única vez por máquina (não vem no `npm install` porque é um binário, não
+um pacote npm):
+
+```bash
+npx playwright install chromium
+npm run test:e2e     # arranca o `npm run dev` sozinho (webServer no playwright.config.ts)
+```
+
+Os specs e2e usam *route mocking* (`page.route`), por isso não é preciso
+o backend real a correr — só o próprio frontend.
+
+---
+
 ## Pré-requisitos
 
 | Ferramenta             | Versão recomendada |
@@ -120,6 +149,13 @@ E claro: Google OAuth configurado (ver `backend/.env` / `docs/OAUTH_SETUP.md`).
 
 ---
 
+## Funcionalidades transversais
+
+- **Tema escuro/claro** — toggle no `AppHeader`, persiste em `localStorage` via `ThemeContext`.
+- **i18n PT/EN** — toggle PT/EN no `AppHeader`, persiste em `localStorage` via `LanguageContext`.
+  Strings centralizadas em `src/i18n/translations.ts` (sem biblioteca externa). Componente usa
+  `const { t } = useLanguage()`.
+
 ## Funcionalidades já integradas
 
 ### 🔐 Autenticação (`/users`)
@@ -127,7 +163,7 @@ E claro: Google OAuth configurado (ver `backend/.env` / `docs/OAUTH_SETUP.md`).
   → `GET /users/auth/google/login`
 - Callback (`/auth/callback`) troca o `code` por JWT
   → `GET /users/auth/google/callback?code=…`
-- Token guardado em `localStorage` (`utils/auth.ts`).
+- Token guardado em contexto React (`AuthContext`) e persistido em `localStorage` (`utils/auth.ts`).
 - `ProtectedRoute` valida o token a cada montagem chamando
   `GET /users/me`.
 
@@ -154,19 +190,20 @@ E claro: Google OAuth configurado (ver `backend/.env` / `docs/OAUTH_SETUP.md`).
     e download do WAV resultante.
 - Eliminação (`DELETE /audio/{id}`).
 
-### 🔮 Geração (em pausa)
-Os ficheiros existem (`services/generation`, `hooks/generation`,
-`components/Generation`, `pages/generationCreation.tsx`) e estão alinhados
-com os endpoints actuais do backend, mas **não há rota activa**. Quando
-quiseres ligar, basta:
+### 🔮 Geração
 
-1. Adicionar a rota em `src/main.tsx`:
-   ```tsx
-   import GenerationCreationPage from './pages/generationCreation';
-   // …
-   { path: '/projects/:projectId/audio/:audioId/generate', element: <GenerationCreationPage /> }
-   ```
-2. Adicionar um link/botão no `audioDetail.tsx` que vá para essa URL.
+Integração completa com todos os endpoints de geração:
+
+- **Painel de geração** (`GenerateMusicPanel`) — submete geração original ou cover
+  (`POST /generation`, `POST /generation/cover`) e faz polling de estado.
+- **Árvore de gerações** (`GenerationTree`) — mostra a geração raiz e os seus cortes
+  filhos (`GET /generation/by-audio/{audioId}`, `GET /generation/{id}/cuts`).
+- **Editor de waveform** (`WaveformCutter` + `CutActionPanel`) — wavesurfer.js para
+  selecionar um intervalo e criar um corte (`POST /generation/{id}/cut`).
+- **Player lazy** (`AudioPlayer`) — só descarrega o blob quando o utilizador pede
+  (`GET /generation/{id}/audio` → presigned URL R2).
+- **Notação** — botões no detalhe do áudio para gerar tablatura e partitura PDF
+  (`POST /generation/{id}/tablature`, `POST /generation/{id}/partitura`).
 
 ---
 
@@ -259,17 +296,17 @@ Docker `music_ai_network`). Confirma que o serviço `backend` está saudável:
 `docker compose ps`. Se reiniciaste só o backend, o nginx pode estar com
 DNS em cache: `docker compose restart frontend`.
 
-**Em modo dev nativo, “CORS error” / pedidos não chegam ao backend.**
+**Em modo dev nativo, "CORS error" / pedidos não chegam ao backend.**
 Verifica `vite.config.ts`: o proxy aponta para `http://localhost:8000`. Se
 o backend está noutra porta ou host, ajusta aí. O frontend só faz pedidos
 a `/api/...`, que o Vite reescreve para `/api/v1/...`.
 
-**Login não funciona / “redirect_uri_mismatch”.**
+**Login não funciona / "redirect_uri_mismatch".**
 O *Authorized redirect URI* na Google Cloud Console tem de bater certo com o
 configurado no backend (ex.: `http://localhost:8000/api/v1/users/auth/google/callback`).
 Se quiseres usar a app em produção, regista também o redirect público.
 
-**“Not authenticated” mesmo depois de login.**
+**"Not authenticated" mesmo depois de login.**
 Confirma o JWT em DevTools → Application → Local Storage
 (`music_ai.access_token`). O `request.ts` envia esse token em
 `Authorization: Bearer <token>`. Se o backend reiniciou e a chave HMAC

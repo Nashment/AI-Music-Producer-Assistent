@@ -34,7 +34,7 @@ nunca lançando exceções para a camada de endpoint. A tradução para HTTP Pro
 | Worker Celery (geração)  | Funcional — fila `celery` (Suno + pós-processamento)    |
 | Worker Celery (notação)  | Funcional — fila `notation` (tablatura + partitura)     |
 | Frontend SPA             | Funcional — React 19 + TS, tema escuro/claro, i18n PT/EN |
-| Testes                   | Estrutura criada, maioritariamente `pass`               |
+| Testes                   | Backend: 152 passed / 3 skipped (pytest). Frontend: 155 testes unitários + 13 e2e (Vitest + Playwright), todos a passar. Cobertura: reducers, hooks, services e componentes-chave; falta endpoints FastAPI e tasks Celery. |
 
 ## Estrutura
 
@@ -199,6 +199,9 @@ projeto/
 │   │   └── utils/
 │   │       ├── auth.ts
 │   │       └── common.ts
+│   ├── tests/
+│   │   ├── unit/                ← Vitest + Testing Library (155 testes)
+│   │   └── e2e/                 ← Playwright (13 testes)
 │   └── style/
 │       ├── style.css            ← design tokens (cores, spacing, tipografia)
 │       ├── layout.css
@@ -279,6 +282,23 @@ Build de produção:
 npm run build    # output em dist/
 ```
 
+## Testes
+
+```bash
+# Backend (pytest)
+cd backend
+pytest -v                    # suite completa (152 passed / 3 skipped)
+pytest -v -m "not integration"   # sem os testes que precisam de LilyPond/ficheiros reais
+
+# Frontend (Vitest + Playwright)
+cd frontend
+npm run test:unit            # 155 testes unitários
+npx playwright install chromium   # uma única vez por máquina
+npm run test:e2e             # 13 testes end-to-end
+```
+
+Ver `frontend/README.md` (secção "Testes") para mais detalhe sobre o que cada suite cobre.
+
 ## Filas Celery
 
 Existem dois workers com filas distintas para evitar que tarefas rápidas fiquem
@@ -332,16 +352,18 @@ Prefixo base: `/api/v1`
 |--------|------|-----------|
 | POST | `/generation` | Submete geração de música original (202 Accepted) |
 | POST | `/generation/cover` | Submete geração de cover (202 Accepted) |
-| POST | `/generation/tablature/{audio_id}` | Gera tablatura PDF a partir de upload |
-| POST | `/generation/partitura/{audio_id}` | Gera partitura PDF a partir de upload |
+| POST | `/generation/tablature/{audio_id}` | Gera tablatura PDF a partir de upload (síncrono, devolve o PDF) |
+| POST | `/generation/partitura/{audio_id}` | Gera partitura PDF a partir de upload (síncrono, devolve o PDF) |
 | GET | `/generation/by-audio/{audio_id}` | Lista gerações associadas a um áudio |
 | GET | `/generation/{id}/status` | Estado da geração (polling) |
 | GET | `/generation/{id}` | Resultado completo da geração |
 | GET | `/generation/{id}/audio` | Presigned URL R2 para o áudio gerado |
 | GET | `/generation/{id}/cuts` | Lista cortes de uma geração |
 | POST | `/generation/{id}/cut` | Cria corte (início/fim em segundos) — 201 Created |
-| POST | `/generation/{id}/partitura` | Gera partitura PDF a partir de geração |
-| POST | `/generation/{id}/tablature` | Gera tablatura PDF a partir de geração |
+| POST | `/generation/{id}/partitura` | Enfileira partitura em background (202 Accepted, idempotente — serve também para regenerar) |
+| GET | `/generation/{id}/partitura` | Presigned URL R2 da partitura (409 se ainda não `completed`) |
+| POST | `/generation/{id}/tablature` | Enfileira tablatura em background (202 Accepted, idempotente — serve também para regenerar) |
+| GET | `/generation/{id}/tablature` | Presigned URL R2 da tablatura (409 se ainda não `completed`) |
 | DELETE | `/generation/{id}` | Elimina geração — 204 No Content |
 
 ## Frontend — Páginas e Funcionalidades
@@ -402,6 +424,7 @@ Os endpoints devolvem erros no formato RFC 7807 (Problem Details):
 | LilyPond | Geração de tablaturas (PDF) |
 | basic-pitch (Spotify) | Transcrição áudio → MIDI |
 | pydub / librosa | Processamento de áudio |
+| pytest + pytest-asyncio | Testes de backend |
 
 ### Frontend
 
@@ -412,12 +435,15 @@ Os endpoints devolvem erros no formato RFC 7807 (Problem Details):
 | wavesurfer.js | 7.10.1 | Editor de waveform |
 | TypeScript | 5.9.3 | Tipagem estática |
 | Vite | 7.2.2 | Build tool + dev server |
+| Vitest + Testing Library | — | Testes unitários |
+| Playwright | — | Testes end-to-end |
 
 ## Documentação Adicional
 
 - `PROJECT_STATUS.md` — estado atual por área
 - `QUICK_START.md` — guia de arranque com troubleshooting
-- `POSTMAN_QUERIES.md` — exemplos de pedidos prontos a usar
-- `docs/ESTRUTURA_CRIADA.md` — estrutura de ficheiros detalhada
+- `backend/README.md` — guia do backend (endpoints, testes)
+- `frontend/README.md` — guia do frontend (arranque, estrutura, testes)
 - `docs/INTEGRACAO_WORKER.md` — pipeline Celery/Suno
 - `docs/OAUTH_SETUP.md` — configuração do Google OAuth
+- `docs/OAUTH_IMPLEMENTATION.md` — detalhe da implementação OAuth
