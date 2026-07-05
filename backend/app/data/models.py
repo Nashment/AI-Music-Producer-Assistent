@@ -6,11 +6,52 @@ import uuid
 import enum
 from datetime import datetime
 from sqlalchemy import Column, String, Text, Float, DateTime, ForeignKey, Enum, Integer, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator, CHAR
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+
+class GUID(TypeDecorator):
+    """Tipo UUID multiplataforma.
+
+    Usa o tipo nativo UUID do PostgreSQL em produção (validação e indexação
+    nativas), e CHAR(36) nos restantes dialectos -- nomeadamente o SQLite em
+    memória usado pelos testes (tests/conftest.py), que não tem um tipo UUID
+    nativo e antes rebentava em Base.metadata.create_all com
+    `sqlalchemy.exc.UnsupportedCompilationError: can't render element of
+    type UUID`, impedindo a suite inteira de correr.
+
+    Aceita tanto `str` como `uuid.UUID` ao vincular parâmetros (o resto do
+    código mistura os dois livremente) e devolve sempre um `uuid.UUID` ao
+    ler -- o mesmo contrato que `postgresql.UUID(as_uuid=True)` já tinha,
+    por isso não implica alterações no resto da aplicação.
+    """
+
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return str(value)
+        if not isinstance(value, uuid.UUID):
+            value = uuid.UUID(value)
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if not isinstance(value, uuid.UUID):
+            value = uuid.UUID(value)
+        return value
 
 
 class OAuthProvider(str, enum.Enum):
@@ -33,7 +74,7 @@ class User(Base):
     """User model - Strict OAuth based authentication (Minimal Data)"""
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     username = Column(String(128), unique=True, index=True, nullable=False)
 
     oauth_provider = Column(String(50), nullable=False)
@@ -56,8 +97,8 @@ class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("user_id", "title", name="uq_projects_user_title"),)
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(255), nullable=False)
     description = Column(Text)
     tempo = Column(Integer)
@@ -74,13 +115,13 @@ class AudioFile(Base):
     """Uploaded audio file model"""
     __tablename__ = "audio_files"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     # Um AudioFile so existe dentro de um projeto: obrigatorio e eliminado em
     # cascata quando o projeto e apagado (antes era SET NULL/opcional, o que
     # permitia audios "orfaos" sem projeto).
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    parent_audio_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id", ondelete="SET NULL"), nullable=True)
+    project_id = Column(GUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    parent_audio_id = Column(GUID(), ForeignKey("audio_files.id", ondelete="SET NULL"), nullable=True)
 
     # Chave R2 do ficheiro no Cloudflare (ex: "audio/{uuid}_{filename}")
     storage_key = Column(String(512), nullable=False)
@@ -108,14 +149,14 @@ class Generation(Base):
     __tablename__ = "generations"
 
     # Identificador unico - usado em todos os contextos (API, Celery, FK)
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
 
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    audio_file_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id", ondelete="SET NULL"))
+    user_id = Column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(GUID(), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    audio_file_id = Column(GUID(), ForeignKey("audio_files.id", ondelete="SET NULL"))
 
     parent_generation_id = Column(
-        UUID(as_uuid=True),
+        GUID(),
         ForeignKey("generations.id", ondelete="CASCADE"),
         nullable=True,
     )

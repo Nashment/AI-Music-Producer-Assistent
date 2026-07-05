@@ -1,8 +1,7 @@
 """
 Pytest configuration and fixtures.
 
-Fornece dois níveis de DB para os testes:
-  - test_db_session      : sessão síncrona SQLite (legada, para testes simples)
+Fornece a sessão de DB usada pelos testes:
   - async_db_session     : AsyncSession SQLite+aiosqlite (para testar serviços reais)
 
 Mocks reutilizáveis:
@@ -10,44 +9,33 @@ Mocks reutilizáveis:
   - mock_celery_task     : AsyncResult simulado para tarefas Celery
 """
 
+import os
+
+# Tem de ser definido ANTES de qualquer `from app...` (mesmo indiretamente,
+# via outro ficheiro de teste importado primeiro pelo pytest) importar
+# `app.core.config`, porque `settings` ali e um singleton com `@lru_cache`:
+# uma vez construido, fica com o valor que a env var tinha nesse instante
+# para o resto da sessao de testes. Se isto estivesse so em
+# test_user_service.py, a ordem de recolha do pytest (alfabetica --
+# test_audio_service.py vem primeiro) importava `app.core.config` antes
+# desta linha correr, e `UserService()` rebentava com "JWT_SECRET_KEY nao
+# esta definida" mesmo esta linha existindo algures. Por estar aqui, o
+# conftest.py e sempre carregado antes de qualquer modulo de teste do
+# directorio, garantindo a ordem certa.
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-unit-tests")
+
 import uuid
 import pytest
 import pytest_asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import StaticPool
 
 from app.data import UserQueries, ProjectQueries, AudioQueries, GenerationQueries
 from app.data.models import Base, GenerationStatusEnum, User, Project, AudioFile, Generation
-
-
-# ---------------------------------------------------------------------------
-# Sessão síncrona (retrocompatibilidade com testes legados)
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def test_db_engine():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(bind=engine)
-    yield engine
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture(scope="function")
-def test_db_session(test_db_engine) -> Session:
-    TestingSessionLocal = sessionmaker(bind=test_db_engine)
-    session = TestingSessionLocal()
-    yield session
-    session.rollback()
-    session.close()
 
 
 # ---------------------------------------------------------------------------

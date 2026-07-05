@@ -4,3 +4,8 @@ dist
 .env.local
 .vite
 *.log
+
+# Artefactos gerados ao correr os testes (não são código-fonte)
+playwright-report/
+test-results/
+coverage/

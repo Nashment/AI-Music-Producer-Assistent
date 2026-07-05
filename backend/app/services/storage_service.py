@@ -25,19 +25,34 @@ class StorageService:
     """Wrapper fino sobre boto3 para operacoes no bucket R2."""
 
     def __init__(self):
-        self._client = boto3.client(
-            "s3",
-            endpoint_url=settings.R2_ENDPOINT_URL,
-            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
-            config=Config(
-                signature_version="s3v4",
-                # R2 usa path-style; virtual-hosted falha em alguns ambientes
-                s3={"addressing_style": "path"},
-            ),
-            region_name="auto",
-        )
+        # O cliente boto3 e criado apenas na primeira utilizacao real (ver
+        # propriedade `_client` abaixo), nao aqui. Isto e importante porque
+        # `storage = StorageService()` e instanciado uma unica vez, a nivel
+        # de modulo, assim que qualquer coisa importa este ficheiro -- se o
+        # cliente fosse construido logo aqui, importar este modulo sem
+        # R2_ACCOUNT_ID configurado (ex.: correr a suite de testes sem um
+        # .env) rebentava com `ValueError: Invalid endpoint` antes de
+        # qualquer teste chegar a correr, mesmo em testes que nunca tocam
+        # storage a serio (todos usam mocks).
+        self._client_instance = None
         self._bucket = settings.R2_BUCKET_NAME
+
+    @property
+    def _client(self):
+        if self._client_instance is None:
+            self._client_instance = boto3.client(
+                "s3",
+                endpoint_url=settings.R2_ENDPOINT_URL,
+                aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+                config=Config(
+                    signature_version="s3v4",
+                    # R2 usa path-style; virtual-hosted falha em alguns ambientes
+                    s3={"addressing_style": "path"},
+                ),
+                region_name="auto",
+            )
+        return self._client_instance
 
     # ------------------------------------------------------------------
     # Upload

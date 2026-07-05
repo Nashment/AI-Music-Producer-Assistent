@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "version": "0.1.0",
-  "description": "Frontend (React + TypeScript + Vite) para o backend de gera\u00e7\u00e3o musical.",
+  "description": "Frontend (React + TypeScript + Vite) para o backend de geração musical.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -29,6 +29,7 @@
     "@vitest/ui": "^1.6.0",
     "jsdom": "^24.1.0",
     "@testing-library/react": "^16.0.0",
-    "@testing-library/user-event": "^14.5.2"
+    "@testing-library/user-event": "^14.5.2",
+    "@testing-library/jest-dom": "^6.9.1"
   }
 }
